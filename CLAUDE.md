@@ -95,3 +95,11 @@ When I say **"plan my day"**:
 - **For work-related task captures: ask for due date and priority** before creating
 - **"Waiting for" tasks**: prefix title with `WAITING:` and always place in **Bedrock Robotics** (`69547156d4ca9147cf3c78fa`) regardless of context — single home for all waiting tasks
 - **Extensible tasks** (startup): ask which of the three Extensible projects it belongs to (GTM, Product, or Strategy) unless obvious from context
+
+## Task Update Safety Rules
+
+To prevent updating the wrong task:
+
+- **Always search first, then update** — never update a task using an ID recalled from memory or inferred from context. Always retrieve the task ID via an explicit search in the same session before updating it.
+- **Verify title before updating** — confirm the task title in the search result matches the intended task before executing any update.
+- **Never batch updates using unverified IDs** — when updating multiple tasks at once, ensure every task ID was explicitly retrieved and verified in the current session, not assumed from prior context.
