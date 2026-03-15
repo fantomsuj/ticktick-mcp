@@ -116,6 +116,13 @@ When I say **"plan my day"**:
 - **"Waiting for" tasks**: prefix title with `WAITING:` and always place in **BR Commercial & BD** (`699c8a338f088b3b190a1a5d`) regardless of context — single home for all waiting tasks
 - **Extensible tasks** (startup): ask which of the three Extensible projects it belongs to (GTM, Product, or Strategy) unless obvious from context
 
+### Auto Task Capture
+When I mention I'm working on something, automatically:
+1. Search for an existing matching task
+2. If none exists, create one (with 🚩 prefix) in the appropriate project
+3. Start time = current PST, duration = 30 min (unless I say otherwise)
+4. Priority = Medium (3) — it's an active next action
+
 ## Task Update Safety Rules
 
 To prevent updating the wrong task:
