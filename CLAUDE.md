@@ -103,6 +103,31 @@ When I say **"plan my day"**:
 
 **Highlight enforcement**: if I already have a High (5) task and try to set another, pause and say which task is currently the Highlight, then ask which one should take that role.
 
+### End of Day Close
+When I say **"close my day"**:
+1. Show tasks completed today
+2. Show tasks that were scheduled today but not done
+3. Ask for each unfinished task: reschedule to tomorrow, move to Someday/Maybe, or drop?
+4. Execute decisions one at a time
+5. Ask: "What's your Highlight for tomorrow?" — set it if I name one
+
+### Overdue Hygiene
+When showing overdue tasks during daily planning or weekly review:
+- Flag anything **3+ days overdue** prominently
+- For each, ask: reschedule, move to Someday/Maybe, or drop?
+- Don't let overdue tasks silently pile up — surface them actively
+
+### Priority Audit
+At the start of each planning session:
+- Check how many tasks are marked High (5)
+- If more than 1 is High, list them all and ask which one is the real Highlight
+- Demote the rest to Medium (3) after confirmation
+
+### Focus Mode
+When I say **"focus on [project]"**:
+- Only surface tasks from that project until I say "unfocus" or switch context
+- If I mention unrelated tasks, capture them in Inbox but don't derail the focus
+
 ---
 
 ## Behavioral Preferences
