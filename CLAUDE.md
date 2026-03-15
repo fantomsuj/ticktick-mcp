@@ -10,7 +10,9 @@ See AGENT.md for scheduling rules.
 - **Inbox**: `699a5943b1bed115b35b1e10` — Default for quick captures; unprocessed tasks land here
 
 ### Tier 1 — Core Focus
-- **Bedrock Robotics**: `69547156d4ca9147cf3c78fa` — Full-time job, highest priority
+- **BR Commercial & BD**: `699c8a338f088b3b190a1a5d` — Full-time job (Bedrock Robotics), commercial & business development; highest priority
+- **BR Ops & Intelligence**: `699c8a3c8f088b3b190a1ba1` — Full-time job (Bedrock Robotics), operations & intelligence; highest priority
+  - _Note: The old Bedrock Robotics project (`69547156d4ca9147cf3c78fa`) is now closed and replaced by these two._
 - **BSIF Fellowship**: `6988fcb958ca9155b99ecc3f` — Fellowship to build a new startup (Extensible); second highest priority
 - **Tools**: `693a3b6a34db910305e570fc` — Personal projects I'm building; high priority
 - **AI Research**: `6925de124d1951f8c0a709b0` — Complements building tools; high priority
@@ -34,23 +36,23 @@ These three projects are all part of building Extensible, the startup I'm workin
 - **Applimize**: `680fb5bf9c3dd104da46713d` — Old company; winding down
 
 ### Other Active (Lower Priority)
-- **Chaumet Office**: `66884177becd911b75279a94`
-- **UNC General**: `668b7ff488305102443ea121`
-- **Tech**: `6695fb18fdb29194d7492736`
-- **Routines**: `6695fb3aab509194d7492975`
-- **Reading**: `669c9bd88f088125da4c32bf`
-- **General Personal**: `669df8928f089169e9760578`
-- **Real Estate**: `66c2a448151bd14d76dab830`
-- **Connecting People**: `66c2a48e45f3514d76dab9f0`
-- **Private Equity**: `66c36b538f08a02ea8eedeaf`
-- **Applications**: `66d74dacbb201101c5b3232b`
-- **Public Markets**: `66f6b22b8e53512eb9cf07a0`
-- **Active Deals & Projects**: `66f6b2938ba3112eb9cf0f11`
-- **Venture Capital**: `672e789064be5181d618b716`
-- **PPE**: `673a768c7a9a519a677d41c3`
-- **Reframe**: `673a7a716a1a119a677d590d`
-- **Crypto**: `6748ad361bda5112cf35c4be`
-- **Energy**: `684db6c3227ed1033cf0fd47`
+- **Chaumet Office**: `66884177becd911b75279a94` — Family office work for Alban Chaumet; investment research, financial tools, credit building, philanthropy, and real estate listings
+- **UNC General**: `668b7ff488305102443ea121` — University of North Carolina academic life; degree planning, class registration, housing/sublease, study abroad, campus events
+- **Tech**: `6695fb18fdb29194d7492736` — Developer tools, productivity workflows, AI agents, and tech content/writing ideas
+- **Routines**: `6695fb3aab509194d7492975` — Recurring habits and rituals; daily planning, email triage, groceries, gym, reading reviews, Spanish practice, horizon reviews
+- **Reading**: `669c9bd88f088125da4c32bf` — Book queue and reading list; business, strategy, fiction, and personal development (32 books tracked)
+- **General Personal**: `669df8928f089169e9760578` — Miscellaneous personal tasks; personal website, clothes, developer events, TickTick setup
+- **Real Estate**: `66c2a448151bd14d76dab830` — Real estate investing research; REITs, AZ land analysis, mall redevelopment thesis, agent outreach
+- **Connecting People**: `66c2a48e45f3514d76dab9f0` — Introductions and networking matchmaking between contacts
+- **Private Equity**: `66c36b538f08a02ea8eedeaf` — PE firm research (Carlyle, Apollo, Sequoia), LP account access, VC/PE event attendance
+- **Applications**: `66d74dacbb201101c5b3232b` — Fellowships, grants, and scholarships (OSV, Z Fellows, Accel Scholars, ICSC); also personal website/portfolio builds
+- **Public Markets**: `66f6b22b8e53512eb9cf07a0` — Stock market research; mining/HPC stocks, healthcare pitches, SEC filings, investment screening tools
+- **Active Deals & Projects**: `66f6b2938ba3112eb9cf0f11` — Active commercial real estate deals and CRE education; ICSC networking, agent meetings, North Scottsdale research for Opus/Alban
+- **Venture Capital**: `672e789064be5181d618b716` — VC career development; DRF partnership, deal sourcing pipeline, Bain Capital analysis
+- **PPE**: `673a768c7a9a519a677d41c3` — UNC Philosophy, Politics & Economics club; reading groups and leadership transition planning
+- **Reframe**: `673a7a716a1a119a677d590d` — Advisory/potential CEO role for Reframe (Jeff's company); white papers, acquisition briefs, product evaluation
+- **Crypto**: `6748ad361bda5112cf35c4be` — Web3 learning and projects; dilution dashboard, Ethereum/Farcaster deep dives, Legacy Coin
+- **Energy**: `684db6c3227ed1033cf0fd47` — Nuclear, renewables, and deep tech research; Fuse internship prep, quantum computing, manufacturing, DER
 
 ---
 
@@ -67,6 +69,8 @@ TickTick priorities map to my GTD approach:
 
 ### Highlight Rule
 The Highlight is the single most important task for the day — not the most urgent, but the one that will make the day feel like a win. Only one High (5) task should exist at any time. If I try to set a second one, flag the conflict and ask which should be the Highlight.
+
+**Highlight visual marker**: When setting a task as the Highlight, prepend `⭐ ` to the task title (e.g., `⭐ Write investor memo`). When a task is demoted from Highlight status, remove the `⭐ ` prefix. This makes the Highlight visually distinct in all TickTick views.
 
 ---
 
@@ -99,12 +103,13 @@ When I say **"plan my day"**:
 
 ## Behavioral Preferences
 
+- **Prepend 🚩 to all task titles you create** — every task created by Claude should start with `🚩 ` (e.g., `🚩 Go through Matt's Hex projects`)
 - **Always confirm before deleting tasks** — never delete without explicit yes; always show the task title AND description when confirming deletions
 - **Always confirm before marking complete** — never complete without confirming
 - **When creating multiple tasks, use `batch_create_tasks`** — not one-by-one
 - **Default project for unspecified tasks: Inbox** (`699a5943b1bed115b35b1e10`) — treat it as the capture bucket
 - **For work-related task captures: ask for due date and priority** before creating
-- **"Waiting for" tasks**: prefix title with `WAITING:` and always place in **Bedrock Robotics** (`69547156d4ca9147cf3c78fa`) regardless of context — single home for all waiting tasks
+- **"Waiting for" tasks**: prefix title with `WAITING:` and always place in **BR Commercial & BD** (`699c8a338f088b3b190a1a5d`) regardless of context — single home for all waiting tasks
 - **Extensible tasks** (startup): ask which of the three Extensible projects it belongs to (GTM, Product, or Strategy) unless obvious from context
 
 ## Task Update Safety Rules
