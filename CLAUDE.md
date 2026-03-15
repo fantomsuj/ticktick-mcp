@@ -28,6 +28,9 @@ These three projects are all part of building Extensible, the startup I'm workin
 - **CS Study**: `6828b39ea96b91032980817c` — Computer science studies (ongoing)
 - **Startup Inbox**: `686c57f73c47910441e8f414` — Random startup ideas (overlaps with Tools; can treat as capture bucket for startup/tool ideas)
 
+### Someday/Maybe (Parking Lot)
+- **Someday/Maybe**: `69b6e5088f085ebce14b22d6` — Single parking lot for low-priority ideas across all areas; scan during weekly review for anything that's become relevant
+
 ### Tier 4 — Background / Low Touch
 - **Admin & Errands**: `69239f54252c91f8c0a68ad4` — Personal admin, errands, miscellaneous
 - **Relationships & Social**: `69239fd13854d1f8c0a69082` — Social and relationship maintenance
@@ -83,6 +86,7 @@ When I say **"weekly review"**, do this sequence:
 3. Show all tasks due this week
 4. Ask me what I want to reschedule, complete, or delete
 5. Execute my decisions one at a time, confirming each
+6. Scan the **Someday/Maybe** project — surface anything that's become relevant or timely, and ask if any items should be promoted to an active project with a due date
 
 ### Three Big Things
 Each day has a committed core of **three important tasks** (the Highlight + two others). Additional tasks are a "tail" — nice to do if time permits, but not the measure of the day. When planning, identify the three and name them explicitly before time-blocking anything else.
