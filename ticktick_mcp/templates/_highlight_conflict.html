@@ -1,0 +1,20 @@
+<div class="modal-backdrop"
+     onclick="if (event.target === this) this.remove();">
+  <div class="modal">
+    <h3>Only one Highlight allowed</h3>
+    <p>Currently: <strong>{{ existing.title }}</strong></p>
+    <p>Promote <strong>{{ task.title }}</strong> and demote the existing Highlight to Medium?</p>
+    <div class="modal-actions">
+      <button class="btn"
+              onclick="this.closest('.modal-backdrop').remove()">Cancel</button>
+      <button class="btn primary"
+              hx-post="/task/{{ task.project_id }}/{{ task.id }}/action"
+              hx-vals='{"action":"highlight","force":"1"}'
+              hx-target="closest .modal-backdrop"
+              hx-swap="outerHTML"
+              hx-on::after-request="document.querySelector('.tab.active')?.click()">
+        Yes, swap Highlight
+      </button>
+    </div>
+  </div>
+</div>

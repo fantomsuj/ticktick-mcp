@@ -12,12 +12,18 @@ setup(
         "mcp[cli]>=1.2.0,<2.0.0",
         "python-dotenv>=1.0.0,<2.0.0",
         "requests>=2.30.0,<3.0.0",
+        "flask>=3.0.0,<4.0.0",
     ],
     python_requires=">=3.10",
+    include_package_data=True,
+    package_data={
+        "ticktick_mcp": ["templates/*.html", "static/*"],
+    },
     entry_points={
         "console_scripts": [
             "ticktick-mcp=ticktick_mcp.cli:main",
             "ticktick-auth=ticktick_mcp.authenticate:main",
+            "ticktick-dashboard=ticktick_mcp.dashboard:main",
         ],
     },
     classifiers=[

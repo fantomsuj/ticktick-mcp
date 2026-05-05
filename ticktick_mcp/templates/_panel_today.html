@@ -1,0 +1,46 @@
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>{{ title }}</h2>
+      <p class="muted">{{ subtitle }}</p>
+    </div>
+  </div>
+
+  <div class="today-grid">
+    <div class="today-section">
+      <h3 class="section-label">⭐ Highlight</h3>
+      {% if highlight %}
+        {% set task = highlight %}
+        {% include "_card.html" %}
+      {% else %}
+        <div class="empty">
+          No Highlight set. Click ⭐ on the task that would make today feel like a win.
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="today-section">
+      <h3 class="section-label">Three Big Things</h3>
+      {% if big_three|length == 0 %}
+        <div class="empty">Nothing scheduled for today.</div>
+      {% else %}
+        <div class="card-list">
+          {% for task in big_three %}
+            {% include "_card.html" %}
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+
+    {% if tail|length > 0 %}
+      <div class="today-section">
+        <h3 class="section-label">Tail ({{ tail|length }})</h3>
+        <div class="card-list compact">
+          {% for task in tail %}
+            {% include "_card.html" %}
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</section>

@@ -100,6 +100,46 @@ The server handles token refresh automatically, so you won't need to reauthentic
 
 3. Follow the same authentication steps as for TickTick
 
+## Triage Dashboard
+
+A local web dashboard for daily triage and end-of-day planning. It reuses
+the same `.env` tokens as the MCP server.
+
+```bash
+# Real mode — needs TickTick auth set up via `ticktick-auth`
+ticktick-dashboard
+
+# Demo mode with seeded fake data (no credentials needed)
+ticktick-dashboard --mock
+```
+
+Then open http://127.0.0.1:8765/ (auto-opens by default).
+
+The dashboard has seven tabs:
+
+- **Overdue** — every overdue task, oldest first; one click to push to
+  Today / Tomorrow / +3d / +1w / a specific date / Someday / Done / Drop.
+- **Today** — Highlight (⭐), Three Big Things, then the tail.
+- **Tomorrow** — what's already lined up for tomorrow.
+- **Inbox** — every Inbox capture with an assign-project + priority + due
+  form, so you can clear it in one pass.
+- **Waiting** — anything titled `WAITING:` so you can see what's
+  blocked on someone else.
+- **Someday** — for weekly review scans.
+- **End of Day** — close out today (push unfinished to tomorrow / Someday
+  / drop) and set tomorrow's Highlight.
+
+Keyboard shortcuts: `1`–`7` jump between tabs, `r` refreshes from the API.
+
+The Highlight rule is enforced at the server: clicking ⭐ on a second
+task pops a confirm modal and demotes the existing Highlight to Medium
+on confirm. The `⭐ ` prefix is added/removed on the title automatically.
+
+By default it caches API reads for 30s; the Refresh button (or `r`) drops
+the cache. Set `TICKTICK_TIMEZONE=America/New_York` etc. to override the
+local timezone used for "today"/"tomorrow" math (defaults to
+`America/Los_Angeles`).
+
 ## Usage with Claude for Desktop
 
 1. Install [Claude for Desktop](https://claude.ai/download)

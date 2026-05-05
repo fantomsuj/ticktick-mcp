@@ -1,0 +1,18 @@
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>{{ title }}</h2>
+      <p class="muted">{{ subtitle }}</p>
+    </div>
+    <div class="counter">{{ tasks|length }} planned</div>
+  </div>
+  {% if tasks|length == 0 %}
+    <div class="empty">Tomorrow is clear. Open <button class="link" onclick="document.querySelector('.tab[data-panel=eod]').click()">End of Day</button> to plan it.</div>
+  {% else %}
+    <div class="card-list">
+      {% for task in tasks %}
+        {% include "_card.html" %}
+      {% endfor %}
+    </div>
+  {% endif %}
+</section>

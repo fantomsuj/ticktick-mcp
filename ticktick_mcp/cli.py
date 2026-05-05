@@ -40,13 +40,32 @@ def main():
     
     # 'auth' command for authentication
     auth_parser = subparsers.add_parser("auth", help="Authenticate with TickTick")
-    
+
+    # 'dashboard' command for the local triage UI
+    dash_parser = subparsers.add_parser("dashboard", help="Run the local triage dashboard")
+    dash_parser.add_argument("--mock", action="store_true",
+                             help="Run with seeded fake data (no credentials needed)")
+    dash_parser.add_argument("--host", default="127.0.0.1")
+    dash_parser.add_argument("--port", type=int, default=8765)
+    dash_parser.add_argument("--no-browser", action="store_true")
+    dash_parser.add_argument("--debug", action="store_true")
+
     args = parser.parse_args()
     
     # If no command specified, default to 'run'
     if not args.command:
         args.command = "run"
     
+    # The dashboard subcommand handles its own auth gate (and supports --mock).
+    if args.command == "dashboard":
+        from .dashboard import main as dashboard_main
+        dash_argv = []
+        if args.mock: dash_argv.append("--mock")
+        dash_argv += ["--host", args.host, "--port", str(args.port)]
+        if args.no_browser: dash_argv.append("--no-browser")
+        if args.debug: dash_argv.append("--debug")
+        sys.exit(dashboard_main(dash_argv))
+
     # For the run command, check if auth is set up
     if args.command == "run" and not check_auth_setup():
         print("""

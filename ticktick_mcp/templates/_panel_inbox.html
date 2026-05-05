@@ -1,0 +1,72 @@
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>{{ title }}</h2>
+      <p class="muted">{{ subtitle }}</p>
+    </div>
+    <div class="counter">{{ tasks|length }} captures</div>
+  </div>
+
+  {% if tasks|length == 0 %}
+    <div class="empty good">Inbox zero ✨</div>
+  {% else %}
+    <div class="card-list">
+      {% for task in tasks %}
+        <article class="card inbox-card priority-{{ task.priority }}" data-task-id="{{ task.id }}">
+          <div class="card-bar" style="background: {{ task.project_color }}"></div>
+          <div class="card-body">
+            <h3 class="card-title">{{ task.title }}</h3>
+            {% if task.content %}
+              <pre class="card-notes">{{ task.content }}</pre>
+            {% endif %}
+
+            {% set base_url = '/task/' ~ task.project_id ~ '/' ~ task.id ~ '/action' %}
+            <form class="assign-form"
+                  hx-post="{{ base_url }}"
+                  hx-target="closest .card"
+                  hx-swap="outerHTML">
+              <input type="hidden" name="action" value="assign_inbox" />
+              <label>
+                Project
+                <select name="project_id" required>
+                  <option value="" disabled selected>— pick —</option>
+                  {% for p in projects %}
+                    <option value="{{ p.id }}">{{ p.name }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>
+                Priority
+                <select name="priority">
+                  <option value="0">None</option>
+                  <option value="1">Low</option>
+                  <option value="3" selected>Medium (next)</option>
+                  <option value="5">High (Highlight)</option>
+                </select>
+              </label>
+              <label>
+                Due
+                <input type="date" name="due_date" />
+              </label>
+              <button class="btn primary" type="submit">Assign →</button>
+            </form>
+
+            <div class="actions-row inbox-secondary">
+              <button class="btn danger"
+                      hx-post="{{ base_url }}"
+                      hx-vals='{"action":"delete"}'
+                      hx-confirm="Drop &quot;{{ task.title }}&quot;? Can't be undone."
+                      hx-target="closest .card"
+                      hx-swap="outerHTML">Drop</button>
+              <button class="btn"
+                      hx-post="{{ base_url }}"
+                      hx-vals='{"action":"someday"}'
+                      hx-target="closest .card"
+                      hx-swap="outerHTML">→ Someday/Maybe</button>
+            </div>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% endif %}
+</section>

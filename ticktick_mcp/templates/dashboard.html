@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TickTick triage</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}" />
+  <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">✓</span>
+      <h1>Triage</h1>
+      <span class="tz">{{ tz }}</span>
+    </div>
+    <nav class="tabs" id="tabs">
+      {% for p in panels %}
+        <button
+          class="tab"
+          data-panel="{{ p }}"
+          hx-get="{{ url_for('panel', name=p) }}"
+          hx-target="#panel"
+          hx-swap="innerHTML"
+          hx-on::after-request="document.querySelectorAll('.tab').forEach(t => t.classList.remove('active')); this.classList.add('active');"
+        >
+          {% if p == 'triage' %}Overdue{% elif p == 'eod' %}End of Day{% else %}{{ p|capitalize }}{% endif %}
+          <span class="badge" data-count="{{ p }}">
+            {% if counts.get(p) %}{{ counts[p] }}{% endif %}
+          </span>
+        </button>
+      {% endfor %}
+    </nav>
+    <div class="actions">
+      <button
+        class="ghost"
+        hx-post="{{ url_for('refresh') }}"
+        hx-swap="none"
+        title="Pull fresh data from TickTick"
+      >↻ Refresh</button>
+    </div>
+  </header>
+
+  <main id="panel" hx-get="{{ url_for('panel', name='triage') }}" hx-trigger="load">
+    <div class="loading">Loading…</div>
+  </main>
+
+  <div id="modal-root"></div>
+
+  <div
+    id="counts"
+    hx-get="{{ url_for('counts') }}"
+    hx-trigger="refreshCounts from:body, every 60s"
+    hx-swap="innerHTML"
+    style="display:none"
+  ></div>
+
+  <script>
+    // Mark the first tab active on load
+    document.addEventListener('DOMContentLoaded', () => {
+      const first = document.querySelector('.tab[data-panel="triage"]');
+      if (first) first.classList.add('active');
+    });
+
+    // Refresh counts updates the badge spans embedded in tab buttons.
+    document.body.addEventListener('htmx:afterSwap', (e) => {
+      if (e.detail.target.id === 'counts') {
+        const newCounts = e.detail.target.querySelectorAll('[data-tab-count]');
+        newCounts.forEach(span => {
+          const panel = span.dataset.tabCount;
+          const target = document.querySelector(`.badge[data-count="${panel}"]`);
+          if (target) target.textContent = span.textContent.trim();
+        });
+      }
+    });
+
+    // Keyboard shortcuts: 1..7 jump to tabs, r refreshes, ? shows help
+    document.addEventListener('keydown', (e) => {
+      if (e.target.matches('input,textarea,select')) return;
+      const map = {'1':'triage','2':'today','3':'tomorrow','4':'inbox','5':'waiting','6':'someday','7':'eod'};
+      if (map[e.key]) {
+        const tab = document.querySelector(`.tab[data-panel="${map[e.key]}"]`);
+        if (tab) tab.click();
+      } else if (e.key === 'r' && !e.metaKey && !e.ctrlKey) {
+        document.querySelector('.actions .ghost')?.click();
+      }
+    });
+  </script>
+</body>
+</html>

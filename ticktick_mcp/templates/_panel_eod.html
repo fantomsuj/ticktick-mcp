@@ -1,0 +1,48 @@
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>{{ title }}</h2>
+      <p class="muted">{{ subtitle }}</p>
+    </div>
+  </div>
+
+  <div class="eod-grid">
+    <div class="eod-section">
+      <h3 class="section-label">Unfinished today ({{ unfinished|length }})</h3>
+      <p class="muted small">For each: complete, push to tomorrow, drop, or send to Someday.</p>
+      {% if unfinished|length == 0 %}
+        <div class="empty good">Nothing left for today. Nice.</div>
+      {% else %}
+        <div class="card-list">
+          {% for task in unfinished %}
+            {% include "_card.html" %}
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="eod-section">
+      <h3 class="section-label">Tomorrow's Highlight</h3>
+      {% if highlight_for_tomorrow %}
+        <p class="muted small">Already set:</p>
+        {% set task = highlight_for_tomorrow %}
+        {% include "_card.html" %}
+      {% else %}
+        <div class="empty">
+          No Highlight on tomorrow. From the Tomorrow tab, click ⭐ on the one task that would make tomorrow feel like a win.
+        </div>
+      {% endif %}
+    </div>
+
+    {% if tomorrow|length > 0 %}
+      <div class="eod-section">
+        <h3 class="section-label">Tomorrow's lineup ({{ tomorrow|length }})</h3>
+        <div class="card-list compact">
+          {% for task in tomorrow %}
+            {% include "_card.html" %}
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</section>
