@@ -30,5 +30,8 @@ Thumbs.db
 # Log files
 *.log
 
+# Vercel
+.vercel/
+
 # Others
 mcp.txt
