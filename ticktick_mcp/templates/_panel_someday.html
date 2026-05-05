@@ -6,6 +6,9 @@
     </div>
     <div class="counter">{{ tasks|length }} parked</div>
   </div>
+
+  {% include "_reflect.html" %}
+
   {% if tasks|length == 0 %}
     <div class="empty">Someday/Maybe is empty.</div>
   {% else %}

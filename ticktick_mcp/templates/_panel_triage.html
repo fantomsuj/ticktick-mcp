@@ -7,6 +7,8 @@
     <div class="counter">{{ tasks|length }} overdue</div>
   </div>
 
+  {% include "_reflect.html" %}
+
   {% if tasks|length == 0 %}
     <div class="empty good">
       🎉 Inbox zero on overdue. Switch to <button class="link" onclick="document.querySelector('.tab[data-panel=today]').click()">Today</button>.

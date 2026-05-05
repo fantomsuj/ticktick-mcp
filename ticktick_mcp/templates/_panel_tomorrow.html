@@ -6,6 +6,9 @@
     </div>
     <div class="counter">{{ tasks|length }} planned</div>
   </div>
+
+  {% include "_reflect.html" %}
+
   {% if tasks|length == 0 %}
     <div class="empty">Tomorrow is clear. Open <button class="link" onclick="document.querySelector('.tab[data-panel=eod]').click()">End of Day</button> to plan it.</div>
   {% else %}

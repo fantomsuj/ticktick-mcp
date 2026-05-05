@@ -129,6 +129,13 @@ The dashboard has seven tabs:
 - **End of Day** — close out today (push unfinished to tomorrow / Someday
   / drop) and set tomorrow's Highlight.
 
+Each panel opens with a single reflective question (e.g. *"What's the
+one thing that, if done today, would make today feel like a win?"*) so
+the dashboard works as a thinking tool, not just a backlog viewer. The
+prompts rotate by date so they stay fresh across days but stay stable
+during a single planning session — see `ticktick_mcp/prompts.py` to
+edit or add your own.
+
 Keyboard shortcuts: `1`–`7` jump between tabs, `r` refreshes from the API.
 
 The Highlight rule is enforced at the server: clicking ⭐ on a second
@@ -155,6 +162,54 @@ sqlite3 ~/.ticktick-dashboard.db \
   "SELECT ts_local_date, action, COUNT(*) FROM events
    GROUP BY ts_local_date, action ORDER BY ts_local_date DESC LIMIT 20;"
 ```
+
+### Deploying the dashboard to Vercel
+
+The repo ships with a Vercel-ready Flask entrypoint at `api/index.py`
+plus a `vercel.json` rewrite so every route is handled by the dashboard.
+
+**One-time setup:**
+
+1. Push this repo to a Git host Vercel can read (GitHub / GitLab /
+   Bitbucket).
+2. In Vercel, **New Project → Import** the repo. Accept the defaults —
+   Vercel auto-detects the Python function in `api/` and the
+   `api/requirements.txt`.
+3. Set environment variables in **Project → Settings → Environment
+   Variables**:
+
+   | Variable | Required? | Purpose |
+   | --- | --- | --- |
+   | `TICKTICK_ACCESS_TOKEN` | yes (real mode) | Run `ticktick-auth` locally first; copy from your `.env`. |
+   | `TICKTICK_REFRESH_TOKEN` | yes (real mode) | Same source. |
+   | `TICKTICK_CLIENT_ID` | yes (real mode) | Same source. |
+   | `TICKTICK_CLIENT_SECRET` | yes (real mode) | Same source. |
+   | `TICKTICK_TIMEZONE` | optional | e.g. `America/New_York`. Defaults to `America/Los_Angeles`. |
+   | `TICKTICK_DASHBOARD_MODE` | optional | Set to `mock` to force the seeded demo dataset. |
+   | `DASHBOARD_PASSWORD` | **strongly recommended** | Enables HTTP Basic Auth. Without it, anyone with the URL can mutate your tasks. |
+   | `DASHBOARD_USER` | optional | Basic Auth username (default `admin`). |
+4. Deploy. Open the URL Vercel gives you and you'll be prompted for
+   Basic Auth (if you set `DASHBOARD_PASSWORD`).
+
+If `TICKTICK_ACCESS_TOKEN` is missing, the function falls back to mock
+mode — handy for showing the dashboard to someone without exposing your
+tokens. The TickTick OAuth client refreshes tokens automatically on
+expiry, but because Vercel functions are stateless, the refreshed token
+isn't persisted. Re-run `ticktick-auth` locally and update the env vars
+when the refresh token rotates (rare).
+
+**Caveats unique to serverless:**
+
+- The 30-second read cache lives in process memory, so cold starts
+  re-fetch every project. Plan for ~2–4s on the first request after
+  idle; subsequent requests are fast.
+- The local SQLite event log defaults to `:memory:` on Vercel and is
+  reset on every cold start — meaning the End of Day tab won't show
+  "Completed today" history across cold starts. Set
+  `TICKTICK_DASHBOARD_DB=/tmp/ticktick-dashboard.db` to keep it within
+  a single warm function instance, or deploy with a Vercel KV / Postgres
+  backend if you want true persistence.
+- Auto-browser-open is skipped in serverless mode.
 
 ## Usage with Claude for Desktop
 

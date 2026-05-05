@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 from flask import Flask, abort, jsonify, render_template, request, url_for
 
 from .event_log import DEFAULT_DB_PATH, EventLog
+from .prompts import panel_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -394,12 +395,14 @@ def compute_counts(store: TickTickStore) -> Dict[str, int]:
 def panel_data(name: str, store: TickTickStore, event_log: Optional[EventLog] = None) -> Dict:
     projects = project_lookup(store)
     tasks = store.all_active_tasks()
+    prompt = panel_prompt(name, today_local())
     if name == "triage":
         items = [t for t in tasks if is_overdue(t)]
         items = sort_for_triage(items)
         return {
             "title": "Overdue triage",
             "subtitle": "Oldest first. Decide and clear.",
+            "prompt": prompt,
             "tasks": [task_view(t, projects) for t in items],
             "show_quick_reschedule": True,
         }
@@ -415,6 +418,7 @@ def panel_data(name: str, store: TickTickStore, event_log: Optional[EventLog] = 
         return {
             "title": "Today",
             "subtitle": "Highlight + Three Big Things, then the tail.",
+            "prompt": prompt,
             "highlight": task_view(highlight, projects) if highlight else None,
             "big_three": [task_view(t, projects) for t in big_three],
             "tail": [task_view(t, projects) for t in tail],
@@ -424,6 +428,7 @@ def panel_data(name: str, store: TickTickStore, event_log: Optional[EventLog] = 
         return {
             "title": "Tomorrow",
             "subtitle": "What you've already lined up. Push more from Today during End of Day.",
+            "prompt": prompt,
             "tasks": [task_view(t, projects) for t in sort_for_today(items)],
         }
     if name == "inbox":
@@ -438,6 +443,7 @@ def panel_data(name: str, store: TickTickStore, event_log: Optional[EventLog] = 
         return {
             "title": "Inbox triage",
             "subtitle": "Assign each capture a project, priority, and (optional) due date.",
+            "prompt": prompt,
             "tasks": [task_view(t, projects) for t in items],
             "projects": active_projects,
         }
@@ -447,6 +453,7 @@ def panel_data(name: str, store: TickTickStore, event_log: Optional[EventLog] = 
         return {
             "title": "Waiting for",
             "subtitle": "Tasks blocked on someone else.",
+            "prompt": prompt,
             "tasks": [task_view(t, projects) for t in items],
         }
     if name == "someday":
@@ -455,6 +462,7 @@ def panel_data(name: str, store: TickTickStore, event_log: Optional[EventLog] = 
         return {
             "title": "Someday/Maybe",
             "subtitle": "Scan during weekly review. Promote anything timely.",
+            "prompt": prompt,
             "tasks": [task_view(t, projects) for t in items],
         }
     if name == "eod":
@@ -470,6 +478,7 @@ def panel_data(name: str, store: TickTickStore, event_log: Optional[EventLog] = 
         return {
             "title": "End of day",
             "subtitle": "Close out today, set up tomorrow.",
+            "prompt": prompt,
             "unfinished": [task_view(t, projects) for t in unfinished_today],
             "tomorrow": [task_view(t, projects) for t in sort_for_today(tomorrow_items)],
             "highlight_for_tomorrow": next(

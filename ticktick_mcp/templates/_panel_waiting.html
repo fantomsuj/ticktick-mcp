@@ -6,6 +6,9 @@
     </div>
     <div class="counter">{{ tasks|length }} pending</div>
   </div>
+
+  {% include "_reflect.html" %}
+
   {% if tasks|length == 0 %}
     <div class="empty">No "WAITING:" tasks right now.</div>
   {% else %}

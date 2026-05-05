@@ -1,0 +1,10 @@
+{# Reflective prompt shown above each panel. The hint is the
+   actionable verb; the question is the focal nudge. #}
+{% if prompt %}
+  <aside class="reflect">
+    <div class="reflect-question">{{ prompt.question }}</div>
+    {% if prompt.hint %}
+      <div class="reflect-hint">{{ prompt.hint }}</div>
+    {% endif %}
+  </aside>
+{% endif %}

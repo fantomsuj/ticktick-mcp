@@ -1,0 +1,26 @@
+# Local dev / test artifacts
+.env
+.env.template
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.log
+
+# Reference docs & tests not needed at runtime
+test_server.py
+ticktick-openapi.md
+
+# MCP server entrypoints aren't used by the dashboard deploy. The
+# dashboard imports `ticktick_mcp.src.ticktick_client` (lightweight),
+# but the MCP server (`ticktick_mcp/src/server.py`) and CLI
+# (`ticktick_mcp/cli.py`, `authenticate.py`) pull in the `mcp` SDK
+# which is heavy and unnecessary in serverless.
+ticktick_mcp/src/server.py
+ticktick_mcp/cli.py
+ticktick_mcp/authenticate.py
+
+# Build output
+dist/
+build/
+*.egg-info/

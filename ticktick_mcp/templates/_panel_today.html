@@ -6,6 +6,8 @@
     </div>
   </div>
 
+  {% include "_reflect.html" %}
+
   <div class="today-grid">
     <div class="today-section">
       <h3 class="section-label">⭐ Highlight</h3>
@@ -13,8 +15,9 @@
         {% set task = highlight %}
         {% include "_card.html" %}
       {% else %}
-        <div class="empty">
-          No Highlight set. Click ⭐ on the task that would make today feel like a win.
+        <div class="empty highlight-empty">
+          <p class="empty-question">What's the one thing you want to do today?</p>
+          <p class="muted small">Pick the task that would make today feel like a win, then click ⭐ on it below. Only one Highlight at a time.</p>
         </div>
       {% endif %}
     </div>
