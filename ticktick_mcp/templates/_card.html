@@ -1,0 +1,117 @@
+{# Single task card. The actions row is reused across panels. #}
+<article class="card priority-{{ task.priority }}{% if task.is_highlight %} highlight{% endif %}{% if task.is_waiting %} waiting{% endif %}"
+         data-task-id="{{ task.id }}">
+  <div class="card-bar" style="background: {{ task.project_color }}"></div>
+  <div class="card-body">
+    <header class="card-head">
+      <h3 class="card-title">{{ task.title }}</h3>
+      <div class="card-meta">
+        <span class="project-tag" style="--c: {{ task.project_color }}">{{ task.project_name }}</span>
+        {% if task.due_label %}
+          <span class="due {% if task.is_overdue %}overdue{% elif task.is_today %}today{% endif %}">{{ task.due_label }}</span>
+        {% endif %}
+        {% if task.days_overdue >= 3 %}
+          <span class="stale-flag">stale {{ task.days_overdue }}d</span>
+        {% endif %}
+        <span class="prio prio-{{ task.priority }}" title="Priority: {{ task.priority_name }}">{{ task.priority_name }}</span>
+      </div>
+    </header>
+    {% if task.content %}
+      <details class="card-content">
+        <summary>notes</summary>
+        <pre>{{ task.content }}</pre>
+      </details>
+    {% endif %}
+
+    <div class="actions-row">
+      {% set base_url = '/task/' ~ task.project_id ~ '/' ~ task.id ~ '/action' %}
+
+      <button class="btn done"
+              hx-post="{{ base_url }}"
+              hx-vals='{"action":"complete"}'
+              hx-target="closest .card"
+              hx-swap="outerHTML"
+              title="Mark complete">✓ Done</button>
+
+      {% if panel == 'inbox' %}
+        {# Inbox cards have their own assign form below; no reschedule shortcuts #}
+      {% else %}
+        <button class="btn"
+                hx-post="{{ base_url }}"
+                hx-vals='{"action":"today"}'
+                hx-target="closest .card"
+                hx-swap="outerHTML"
+                title="Move to today (9:00 AM)">Today</button>
+
+        <button class="btn"
+                hx-post="{{ base_url }}"
+                hx-vals='{"action":"tomorrow"}'
+                hx-target="closest .card"
+                hx-swap="outerHTML">Tomorrow</button>
+
+        <button class="btn small"
+                hx-post="{{ base_url }}"
+                hx-vals='{"action":"plus_days","days":"3"}'
+                hx-target="closest .card"
+                hx-swap="outerHTML">+3d</button>
+
+        <button class="btn small"
+                hx-post="{{ base_url }}"
+                hx-vals='{"action":"plus_days","days":"7"}'
+                hx-target="closest .card"
+                hx-swap="outerHTML">+1w</button>
+
+        <label class="btn date-pick">
+          📅
+          <input type="date"
+                 hx-post="{{ base_url }}"
+                 hx-vals='js:{action:"specific_date",date:event.target.value}'
+                 hx-target="closest .card"
+                 hx-swap="outerHTML"
+                 hx-trigger="change" />
+        </label>
+
+        <button class="btn"
+                hx-post="{{ base_url }}"
+                hx-vals='{"action":"someday"}'
+                hx-target="closest .card"
+                hx-swap="outerHTML"
+                title="Move to Someday/Maybe">Someday</button>
+      {% endif %}
+
+      <div class="prio-set">
+        <button class="prio-btn prio-5{% if task.priority == 5 %} on{% endif %}"
+                hx-post="{{ base_url }}"
+                hx-vals='{"action":"highlight"}'
+                hx-target="#modal-root"
+                hx-swap="innerHTML"
+                title="Set as today's Highlight (priority High, only one allowed)">⭐</button>
+        <button class="prio-btn prio-3{% if task.priority == 3 %} on{% endif %}"
+                hx-post="{{ base_url }}"
+                hx-vals='{"action":"set_priority","priority":"3"}'
+                hx-target="closest .card"
+                hx-swap="outerHTML"
+                title="Medium / next action">M</button>
+        <button class="prio-btn prio-1{% if task.priority == 1 %} on{% endif %}"
+                hx-post="{{ base_url }}"
+                hx-vals='{"action":"set_priority","priority":"1"}'
+                hx-target="closest .card"
+                hx-swap="outerHTML"
+                title="Low priority">L</button>
+        <button class="prio-btn prio-0{% if task.priority == 0 %} on{% endif %}"
+                hx-post="{{ base_url }}"
+                hx-vals='{"action":"set_priority","priority":"0"}'
+                hx-target="closest .card"
+                hx-swap="outerHTML"
+                title="No priority">·</button>
+      </div>
+
+      <button class="btn danger"
+              hx-post="{{ base_url }}"
+              hx-vals='{"action":"delete"}'
+              hx-confirm="Delete &quot;{{ task.title }}&quot;? This can't be undone."
+              hx-target="closest .card"
+              hx-swap="outerHTML">Drop</button>
+    </div>
+  </div>
+</article>
