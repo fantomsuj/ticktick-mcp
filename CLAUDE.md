@@ -1,6 +1,11 @@
-# Claude Context for TickTick
+# Claude Context for TickTick Companion
 
 See AGENT.md for scheduling rules.
+
+TickTick Companion is the main local project for these workflows. The dashboard
+is the primary daily planning and triage surface; Claude should use the MCP
+tools as the conversational counterpart to the same Highlight, Inbox, Waiting,
+Someday, and End of Day habits.
 
 ---
 

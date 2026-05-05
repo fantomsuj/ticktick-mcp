@@ -1,6 +1,7 @@
 import os
 import json
 import base64
+import time
 import requests
 import logging
 from pathlib import Path
@@ -9,6 +10,16 @@ from typing import Dict, List, Any, Optional, Tuple
 
 # Set up logging
 logger = logging.getLogger(__name__)
+
+TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s value; using %.1fs", name, default)
+        return default
 
 class TickTickClient:
     """
@@ -24,10 +35,11 @@ class TickTickClient:
         
         if not self.access_token:
             raise ValueError("TICKTICK_ACCESS_TOKEN environment variable is not set. "
-                            "Please run 'uv run -m ticktick_mcp.authenticate' to set up your credentials.")
+                            "Please run 'ticktick-companion auth' to set up your credentials.")
             
         self.base_url = os.getenv("TICKTICK_BASE_URL") or "https://api.ticktick.com/open/v1"
         self.token_url = os.getenv("TICKTICK_TOKEN_URL") or "https://ticktick.com/oauth/token"
+        self.timeout_seconds = _env_float("TICKTICK_API_TIMEOUT_SECONDS", 10.0)
         self.headers = {
             "Authorization": f"Bearer {self.access_token}",
             "Content-Type": "application/json",
@@ -68,7 +80,12 @@ class TickTickClient:
         
         try:
             # Send the token request
-            response = requests.post(self.token_url, data=token_data, headers=headers)
+            response = requests.post(
+                self.token_url,
+                data=token_data,
+                headers=headers,
+                timeout=self.timeout_seconds,
+            )
             response.raise_for_status()
             
             # Parse the response
@@ -129,6 +146,20 @@ class TickTickClient:
         
         logger.debug("Tokens saved to .env file")
     
+    def _send_request(self, method: str, url: str, data=None) -> requests.Response:
+        if method == "GET":
+            return requests.get(url, headers=self.headers, timeout=self.timeout_seconds)
+        if method == "POST":
+            return requests.post(
+                url,
+                headers=self.headers,
+                json=data,
+                timeout=self.timeout_seconds,
+            )
+        if method == "DELETE":
+            return requests.delete(url, headers=self.headers, timeout=self.timeout_seconds)
+        raise ValueError(f"Unsupported HTTP method: {method}")
+
     def _make_request(self, method: str, endpoint: str, data=None) -> Dict:
         """
         Makes a request to the TickTick API.
@@ -144,15 +175,7 @@ class TickTickClient:
         url = f"{self.base_url}{endpoint}"
         
         try:
-            # Make the request
-            if method == "GET":
-                response = requests.get(url, headers=self.headers)
-            elif method == "POST":
-                response = requests.post(url, headers=self.headers, json=data)
-            elif method == "DELETE":
-                response = requests.delete(url, headers=self.headers)
-            else:
-                raise ValueError(f"Unsupported HTTP method: {method}")
+            response = self._send_request(method, url, data)
             
             # Check if the request was unauthorized (401)
             if response.status_code == 401:
@@ -160,13 +183,20 @@ class TickTickClient:
                 
                 # Try to refresh the access token
                 if self._refresh_access_token():
-                    # Retry the request with the new token
-                    if method == "GET":
-                        response = requests.get(url, headers=self.headers)
-                    elif method == "POST":
-                        response = requests.post(url, headers=self.headers, json=data)
-                    elif method == "DELETE":
-                        response = requests.delete(url, headers=self.headers)
+                    response = self._send_request(method, url, data)
+
+            if method == "GET" and response.status_code in TRANSIENT_STATUS_CODES:
+                for delay in (0.25, 0.75):
+                    logger.info(
+                        "GET %s returned %s; retrying in %.2fs",
+                        endpoint,
+                        response.status_code,
+                        delay,
+                    )
+                    time.sleep(delay)
+                    response = self._send_request(method, url, data)
+                    if response.status_code not in TRANSIENT_STATUS_CODES:
+                        break
             
             # Raise an exception for 4xx/5xx status codes
             response.raise_for_status()

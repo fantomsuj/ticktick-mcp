@@ -7,6 +7,7 @@ without manually copying and pasting tokens.
 """
 
 import os
+import sys
 import webbrowser
 import json
 import time
@@ -129,6 +130,12 @@ class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
         """Override to prevent noisy logging to stderr."""
         pass
 
+
+class OAuthCallbackServer(socketserver.TCPServer):
+    """Callback server that can restart promptly on the same port."""
+
+    allow_reuse_address = True
+
 class TickTickAuth:
     """TickTick OAuth authentication manager."""
     
@@ -225,7 +232,7 @@ class TickTickAuth:
         try:
             # Use a socket server to handle the callback
             OAuthCallbackHandler.auth_code = None
-            httpd = socketserver.TCPServer(("", self.port), OAuthCallbackHandler)
+            httpd = OAuthCallbackServer(("", self.port), OAuthCallbackHandler)
             
             print(f"Waiting for authentication callback on port {self.port}...")
             
@@ -345,6 +352,101 @@ class TickTickAuth:
         
         logger.info("Tokens saved to .env file")
 
+
+def get_user_input(prompt: str) -> str:
+    """Get user input with validation."""
+    while True:
+        value = input(prompt).strip()
+        if value:
+            return value
+        print("This field cannot be empty. Please try again.")
+
+
+def main() -> int:
+    """Run the interactive authentication flow."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+
+    print("""
+╔════════════════════════════════════════════════╗
+║       TickTick Companion Authentication        ║
+╚════════════════════════════════════════════════╝
+
+This utility will help you authenticate with TickTick
+and obtain the necessary access tokens for TickTick Companion.
+
+Before you begin, you will need:
+1. A TickTick account (https://ticktick.com)
+2. A registered TickTick API application (https://developer.ticktick.com)
+3. Your Client ID and Client Secret from the TickTick Developer Center
+    """)
+
+    env_path = Path('.env')
+    has_credentials = False
+
+    if env_path.exists():
+        with open(env_path, 'r') as f:
+            content = f.read()
+            if 'TICKTICK_CLIENT_ID' in content and 'TICKTICK_CLIENT_SECRET' in content:
+                has_credentials = True
+
+    client_id = None
+    client_secret = None
+
+    if has_credentials:
+        print("Existing TickTick credentials found in .env file.")
+        use_existing = input("Do you want to use these credentials? (y/n): ").lower().strip()
+        if use_existing == 'y':
+            print("Using existing credentials from .env file.")
+        else:
+            client_id = get_user_input("Enter your TickTick Client ID: ")
+            client_secret = get_user_input("Enter your TickTick Client Secret: ")
+    else:
+        print("No existing TickTick credentials found in .env file.")
+        client_id = get_user_input("Enter your TickTick Client ID: ")
+        client_secret = get_user_input("Enter your TickTick Client Secret: ")
+
+    auth = TickTickAuth(
+        client_id=client_id,
+        client_secret=client_secret
+    )
+
+    print("\nStarting the OAuth authentication flow...")
+    print("A browser window will open for you to authorize the application.")
+    print("After authorization, you will be redirected back to this application.\n")
+
+    result = auth.start_auth_flow()
+    print("\n" + result)
+
+    if "successful" in result.lower():
+        print("""
+Authentication complete! You can now use TickTick Companion.
+
+To start the server with Claude for Desktop:
+1. Make sure you have configured Claude for Desktop
+2. Restart Claude for Desktop
+3. You should now see the TickTick tools available in Claude
+
+Enjoy using TickTick through Claude!
+        """)
+        return 0
+
+    print("""
+Authentication failed. Please try again or check the error message above.
+
+Common issues:
+- Incorrect Client ID or Client Secret
+- Network connectivity problems
+- Permission issues with the .env file
+
+For further assistance, please refer to the documentation or raise an issue
+on the GitHub repository.
+        """)
+    return 1
+
+
 def setup_auth_cli():
     """Run the authentication flow as a CLI utility."""
     import argparse
@@ -372,4 +474,4 @@ def setup_auth_cli():
     print(result)
 
 if __name__ == "__main__":
-    setup_auth_cli()
+    sys.exit(main())

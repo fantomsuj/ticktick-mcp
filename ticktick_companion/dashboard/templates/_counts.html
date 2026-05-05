@@ -1,0 +1,9 @@
+{% for p in panels %}
+  {% set v = counts.get(p, 0) %}
+  <span data-tab-count="{{ p }}">{% if v %}{{ v }}{% endif %}</span>
+{% endfor %}
+<span
+  data-refresh-meta
+  data-refresh-error="{{ cache.last_refresh_error }}"
+  data-project-error-count="{{ cache.project_error_count }}"
+>{% if cache.last_refresh_error %}Refresh failed{% elif cache.project_error_count %}{{ cache.last_refresh_label }} · {{ cache.project_error_count }} project issue{% if cache.project_error_count != 1 %}s{% endif %}{% else %}{{ cache.last_refresh_label }}{% endif %}</span>

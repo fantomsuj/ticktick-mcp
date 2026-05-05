@@ -1,4 +1,4 @@
-"""Fake TickTick dataset for `ticktick-dashboard --mock` mode.
+"""Fake TickTick dataset for `ticktick-companion-dashboard --mock` mode.
 
 The mock client mimics the subset of `TickTickClient` that the dashboard
 uses, so the UI can be exercised end-to-end without real API credentials.

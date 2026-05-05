@@ -1,5 +1,8 @@
 # TickTick Open API
 
+This is vendor reference material for the TickTick Open API used by TickTick
+Companion. Product setup and dashboard usage live in `README.md`.
+
 ## Introduction
 
 Welcome to the TickTick Open API documentation. TickTick is a powerful task management application that allows users to easily manage and organize their daily tasks, deadlines, and projects. With TickTick Open API, developers can integrate TickTick's powerful task management features into their own applications and create a seamless user experience.

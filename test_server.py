@@ -7,12 +7,12 @@ This will attempt to initialize the TickTick client and verify the credentials.
 
 import os
 import sys
-from pathlib import Path
+import argparse
 from dotenv import load_dotenv
-from ticktick_mcp.src.ticktick_client import TickTickClient
-from ticktick_mcp.authenticate import main as auth_main
+from ticktick_companion.api.client import TickTickClient
+from ticktick_companion.api.oauth import main as auth_main
 
-def test_ticktick_connection():
+def test_ticktick_connection(write: bool = False):
     """Test the connection to TickTick API."""
     print("Testing TickTick MCP server configuration...")
     
@@ -27,7 +27,7 @@ def test_ticktick_connection():
     if not client_id or not client_secret:
         print("❌ ERROR: TICKTICK_CLIENT_ID or TICKTICK_CLIENT_SECRET environment variables are not set.")
         print("Please register your application at https://developer.ticktick.com/manage")
-        print("Then run 'uv run -m ticktick_mcp.cli auth' to set up your credentials.")
+        print("Then run 'ticktick-companion auth' to set up your credentials.")
         return False
     
     if not access_token:
@@ -44,7 +44,7 @@ def test_ticktick_connection():
             # Reload the environment after authentication
             load_dotenv()
         else:
-            print("Please run 'uv run -m ticktick_mcp.cli auth' to authenticate with TickTick.")
+            print("Please run 'ticktick-companion auth' to authenticate with TickTick.")
             return False
     
     # Initialize TickTick client
@@ -56,15 +56,16 @@ def test_ticktick_connection():
         projects = client.get_projects()
         if 'error' in projects:
             print(f"❌ ERROR: Failed to fetch projects: {projects['error']}")
-            print("Your access token may have expired. Try running 'uv run -m ticktick_mcp.cli auth' to refresh it.")
+            print("Your access token may have expired. Try running 'ticktick-companion auth' to refresh it.")
             return False
         
         print(f"✅ Successfully fetched {len(projects)} projects from TickTick.")
         for i, project in enumerate(projects, 1):
             print(f"  - {project.get('name', 'Unnamed project')} (ID: {project.get('id', 'No ID')})")
         
-        # Test subtask creation if we have projects
-        if projects:
+        # Test subtask creation only when explicitly requested. The default
+        # verification path stays read-only so it is safe to run casually.
+        if projects and write:
             print("\n🧪 Testing subtask creation functionality...")
             test_project_id = projects[0].get('id')
             
@@ -101,9 +102,11 @@ def test_ticktick_connection():
                     client.delete_task(test_project_id, parent_task_id)
             else:
                 print(f"❌ Failed to create parent task: {parent_task.get('error', 'Unknown error')}")
-            
+        elif projects:
+            print("\nSkipping write test. Pass --write to create and clean up a test task/subtask.")
+
         print("\nThe TickTick MCP server is configured correctly!")
-        print("You can now run the server using 'uv run -m ticktick_mcp.cli run'")
+        print("You can now run the server using 'ticktick-companion run'")
         print("Or configure Claude for Desktop to use it.")
         return True
     
@@ -112,5 +115,12 @@ def test_ticktick_connection():
         return False
 
 if __name__ == "__main__":
-    result = test_ticktick_connection()
+    parser = argparse.ArgumentParser(description="Verify TickTick Companion configuration.")
+    parser.add_argument(
+        "--write",
+        action="store_true",
+        help="Also create and clean up a test task/subtask against the real TickTick API.",
+    )
+    args = parser.parse_args()
+    result = test_ticktick_connection(write=args.write)
     sys.exit(0 if result else 1)

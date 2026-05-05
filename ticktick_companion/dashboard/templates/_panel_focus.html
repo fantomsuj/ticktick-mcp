@@ -1,0 +1,36 @@
+<section class="panel focus-panel">
+  <div class="panel-head">
+    <div>
+      <h2>{{ title }}</h2>
+      <p class="muted">{{ subtitle }}</p>
+    </div>
+    <div class="counter">{{ total }} active</div>
+  </div>
+
+  {% if groups|length == 0 %}
+    <div class="empty good">No active open loops.</div>
+  {% else %}
+    <div class="focus-groups">
+      {% for group in groups %}
+        <section class="focus-group">
+          <header class="focus-group-head">
+            <div>
+              <h3>{{ group.name }}</h3>
+              <p class="muted small">{{ group.project_names|join(" · ") }}</p>
+            </div>
+            <div class="focus-counts">
+              {% for pill in group.count_pills %}
+                <span class="bucket-pill bucket-{{ pill.bucket }}">{{ pill.label }} {{ pill.count }}</span>
+              {% endfor %}
+            </div>
+          </header>
+          <div class="card-list compact">
+            {% for task in group.tasks %}
+              {% include "_card.html" %}
+            {% endfor %}
+          </div>
+        </section>
+      {% endfor %}
+    </div>
+  {% endif %}
+</section>
