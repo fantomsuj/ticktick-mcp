@@ -1,9 +1,9 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="ticktick-mcp",
+    name="ticktick-companion",
     version="0.1.0",
-    description="Model Context Protocol (MCP) server for TickTick task management",
+    description="Companion CLI, MCP server, and dashboard for TickTick task management",
     author="Jaesung Park",
     author_email="parkjs814@gmail.com",
     url="https://github.com/parkjs814/ticktick-mcp",
@@ -17,13 +17,16 @@ setup(
     python_requires=">=3.10",
     include_package_data=True,
     package_data={
-        "ticktick_mcp": ["templates/*.html", "static/*"],
+        "ticktick_companion.dashboard": ["templates/*.html", "static/*"],
     },
     entry_points={
         "console_scripts": [
-            "ticktick-mcp=ticktick_mcp.cli:main",
-            "ticktick-auth=ticktick_mcp.authenticate:main",
-            "ticktick-dashboard=ticktick_mcp.dashboard:main",
+            "ticktick-companion=ticktick_companion.cli:main",
+            "ticktick-companion-dashboard=ticktick_companion.dashboard.app:main",
+            "ticktick-auth=ticktick_companion.api.oauth:main",
+            # Backward-compatible aliases for existing MCP/dashboard configs.
+            "ticktick-mcp=ticktick_companion.cli:main",
+            "ticktick-dashboard=ticktick_companion.dashboard.app:main",
         ],
     },
     classifiers=[

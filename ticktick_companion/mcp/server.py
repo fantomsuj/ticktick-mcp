@@ -8,7 +8,7 @@ from typing import Dict, List, Any, Optional
 from mcp.server.fastmcp import FastMCP
 from dotenv import load_dotenv
 
-from .ticktick_client import TickTickClient
+from ..api.client import TickTickClient
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +28,7 @@ def initialize_client():
         
         # Check if we have valid credentials
         if os.getenv("TICKTICK_ACCESS_TOKEN") is None:
-            logger.error("No access token found in .env file. Please run 'uv run -m ticktick_mcp.cli auth' to authenticate.")
+            logger.error("No access token found in .env file. Please run 'ticktick-companion auth' to authenticate.")
             return False
         
         # Initialize the client
@@ -39,7 +39,7 @@ def initialize_client():
         projects = ticktick.get_projects()
         if 'error' in projects:
             logger.error(f"Failed to access TickTick API: {projects['error']}")
-            logger.error("Your access token may have expired. Please run 'uv run -m ticktick_mcp.cli auth' to refresh it.")
+            logger.error("Your access token may have expired. Please run 'ticktick-companion auth' to refresh it.")
             return False
             
         logger.info(f"Successfully connected to TickTick API with {len(projects)} projects")

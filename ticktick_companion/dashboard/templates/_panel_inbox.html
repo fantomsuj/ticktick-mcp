@@ -12,15 +12,26 @@
   {% else %}
     <div class="card-list">
       {% for task in tasks %}
-        <article class="card inbox-card priority-{{ task.priority }}" data-task-id="{{ task.id }}">
+        <article class="card inbox-card priority-{{ task.priority }}"
+                 data-task-id="{{ task.id }}"
+                 data-project-id="{{ task.project_id }}"
+                 data-draggable-task="1">
           <div class="card-bar" style="background: {{ task.project_color }}"></div>
           <div class="card-body">
-            <h3 class="card-title">{{ task.title }}</h3>
+            <div class="title-line">
+              <button class="drag-handle"
+                      type="button"
+                      draggable="true"
+                      aria-label="Drag task"
+                      title="Drag task">↕</button>
+              <h3 class="card-title">{{ task.title }}</h3>
+            </div>
             {% if task.content %}
               <pre class="card-notes">{{ task.content }}</pre>
             {% endif %}
 
             {% set base_url = '/task/' ~ task.project_id ~ '/' ~ task.id ~ '/action' %}
+            {% set confirm_details = ' Notes: ' ~ task.content if task.content else '' %}
             <form class="assign-form"
                   hx-post="{{ base_url }}"
                   hx-target="closest .card"
@@ -55,7 +66,7 @@
               <button class="btn danger"
                       hx-post="{{ base_url }}"
                       hx-vals='{"action":"delete"}'
-                      hx-confirm="Drop &quot;{{ task.title }}&quot;? Can't be undone."
+                      hx-confirm="Drop &quot;{{ task.title }}&quot;?{{ confirm_details }} Can't be undone."
                       hx-target="closest .card"
                       hx-swap="outerHTML">Drop</button>
               <button class="btn"

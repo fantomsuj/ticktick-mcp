@@ -1,0 +1,171 @@
+<section class="panel home-panel">
+  <div class="panel-head">
+    <div>
+      <h2>{{ title }}</h2>
+      <p class="muted">{{ subtitle }}</p>
+    </div>
+    <div class="counter">{{ attention_count }} attention</div>
+  </div>
+
+  <div class="home-grid">
+    <section class="home-block attention-block">
+      <header class="home-block-head">
+        <h3>Attention Queue</h3>
+        <button class="link" onclick="document.querySelector('.tab[data-panel=triage]')?.click()">Open overdue</button>
+      </header>
+      {% if attention|length == 0 %}
+        <div class="empty good">No urgent dashboard warnings.</div>
+      {% else %}
+        <div class="attention-list">
+          {% for item in attention %}
+            <article class="attention-item severity-{{ item.severity }}">
+              <div>
+                <strong>{{ item.label }}</strong>
+                <p>{{ item.summary }}</p>
+              </div>
+              <button class="btn small"
+                      onclick="document.querySelector('.tab[data-panel={{ item.panel }}]')?.click()">
+                {{ item.panel_label }}
+              </button>
+            </article>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </section>
+
+    <section class="home-block commitment-block">
+      <header class="home-block-head">
+        <h3>Today Commitment</h3>
+        <button class="link" onclick="document.querySelector('.tab[data-panel=today]')?.click()">Open today</button>
+      </header>
+      <div class="commitment-layout">
+        <div class="commitment-highlight">
+          <div class="section-label">Highlight</div>
+          {% if commitment.highlight %}
+            <div class="mini-task highlight-mini">
+              <strong>{{ commitment.highlight.title }}</strong>
+              <span>{{ commitment.highlight.project_name }}</span>
+            </div>
+          {% else %}
+            <div class="empty">No Highlight set.</div>
+          {% endif %}
+        </div>
+
+        <div>
+          <div class="section-label">Two Big Things</div>
+          {% if commitment.big_things|length == 0 %}
+            <div class="empty">No other committed tasks yet.</div>
+          {% else %}
+            <div class="mini-list">
+              {% for task in commitment.big_things %}
+                <div class="mini-task">
+                  <strong>{{ task.title }}</strong>
+                  <span>{{ task.project_name }}{% if task.due_label %} · {{ task.due_label }}{% endif %}</span>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
+
+        <div class="commitment-tail">
+          <span class="metric">{{ commitment.tail_count }}</span>
+          <span class="muted small">tail task{% if commitment.tail_count != 1 %}s{% endif %}</span>
+          {% if commitment.waiting_count %}
+            <span class="muted small">{{ commitment.waiting_count }} waiting</span>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="home-block recommendations-block">
+      <header class="home-block-head">
+        <h3>Next Best Actions</h3>
+      </header>
+      {% if recommendations|length == 0 %}
+        <div class="empty good">Nothing needs a dashboard decision right now.</div>
+      {% else %}
+        <div class="recommendation-list">
+          {% for rec in recommendations %}
+            <article class="home-recommendation rec-{{ rec.kind }}">
+              <div class="recommendation-copy">
+                <h4>{{ rec.title }}</h4>
+                <p>{{ rec.body }}</p>
+                {% if rec.task %}
+                  <div class="rec-task">
+                    <span class="rec-family">{{ rec.task.project_family }}</span>
+                    <strong>{{ rec.task.title }}</strong>
+                    <span class="rec-meta">
+                      {{ rec.task.project_name }}
+                      {% if rec.task.due_label %}
+                        · {{ rec.task.due_label }}
+                      {% else %}
+                        · <span class="no-due">No due date</span>
+                      {% endif %}
+                      {% if rec.task.checklist_count %}
+                        · {{ rec.task.checklist_count }} checklist item{% if rec.task.checklist_count != 1 %}s{% endif %}
+                      {% endif %}
+                    </span>
+                  </div>
+                {% endif %}
+              </div>
+              <div class="recommendation-actions">
+                {% if rec.primary_action and rec.task %}
+                  {% set base_url = '/task/' ~ rec.task.project_id ~ '/' ~ rec.task.id ~ '/action' %}
+                  <button class="btn primary small"
+                          hx-post="{{ base_url }}"
+                          hx-vals='{"action":"{{ rec.primary_action.action }}"}'
+                          {% if rec.primary_action.action == 'highlight' %}
+                            hx-target="#modal-root"
+                            hx-swap="innerHTML"
+                          {% else %}
+                            hx-target="closest .home-recommendation"
+                            hx-swap="outerHTML"
+                          {% endif %}
+                          hx-on::after-request="document.body.dispatchEvent(new Event('refreshCounts')); document.querySelector('.tab.active')?.click()">
+                    {{ rec.primary_action.label }}
+                  </button>
+                  {% for action in rec.secondary_actions %}
+                    <button class="btn small"
+                            hx-post="{{ base_url }}"
+                            hx-vals='{"action":"{{ action.action }}"}'
+                            hx-target="closest .home-recommendation"
+                            hx-swap="outerHTML"
+                            hx-on::after-request="document.body.dispatchEvent(new Event('refreshCounts')); document.querySelector('.tab.active')?.click()">
+                      {{ action.label }}
+                    </button>
+                  {% endfor %}
+                {% endif %}
+                <button class="btn small"
+                        onclick="document.querySelector('.tab[data-panel={{ rec.panel }}]')?.click()">
+                  {{ rec.panel_label }}
+                </button>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </section>
+
+    <section class="home-block momentum-block">
+      <header class="home-block-head">
+        <h3>Momentum</h3>
+        <button class="link" onclick="document.querySelector('.tab[data-panel=eod]')?.click()">Open EOD</button>
+      </header>
+      <div class="momentum-row">
+        <div class="momentum-metric">
+          <span class="metric">{{ momentum.completed_count }}</span>
+          <span class="muted small">completed today</span>
+        </div>
+        {% if momentum.activity_stats %}
+          <div class="activity-strip compact">
+            {% for action, n in momentum.activity_stats.items()|sort %}
+              <span class="stat"><strong>{{ n }}</strong> {{ action.replace('_', ' ') }}</span>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="empty">No dashboard actions logged today.</div>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+</section>

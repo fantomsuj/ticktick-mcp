@@ -1,17 +1,32 @@
 {# Single task card. The actions row is reused across panels. #}
 <article class="card priority-{{ task.priority }}{% if task.is_highlight %} highlight{% endif %}{% if task.is_waiting %} waiting{% endif %}"
-         data-task-id="{{ task.id }}">
+         data-task-id="{{ task.id }}"
+         data-project-id="{{ task.project_id }}"
+         data-draggable-task="1">
   <div class="card-bar" style="background: {{ task.project_color }}"></div>
   <div class="card-body">
     <header class="card-head">
-      <h3 class="card-title">{{ task.title }}</h3>
+      <div class="title-line">
+        <button class="drag-handle"
+                type="button"
+                draggable="true"
+                aria-label="Drag task"
+                title="Drag task">↕</button>
+        <h3 class="card-title">{{ task.title }}</h3>
+      </div>
       <div class="card-meta">
         <span class="project-tag" style="--c: {{ task.project_color }}">{{ task.project_name }}</span>
+        {% if panel == 'focus' %}
+          <span class="bucket-pill bucket-{{ task.bucket }}">{{ task.bucket_label }}</span>
+        {% endif %}
         {% if task.due_label %}
           <span class="due {% if task.is_overdue %}overdue{% elif task.is_today %}today{% endif %}">{{ task.due_label }}</span>
         {% endif %}
         {% if task.days_overdue >= 3 %}
           <span class="stale-flag">stale {{ task.days_overdue }}d</span>
+        {% endif %}
+        {% if task.checklist_count %}
+          <span class="checklist-pill">{{ task.checklist_count }} subtask{% if task.checklist_count != 1 %}s{% endif %}</span>
         {% endif %}
         <span class="prio prio-{{ task.priority }}" title="Priority: {{ task.priority_name }}">{{ task.priority_name }}</span>
       </div>
@@ -22,13 +37,18 @@
         <pre>{{ task.content }}</pre>
       </details>
     {% endif %}
+    {% if action_error %}
+      <div class="inline-error">{{ action_error }}</div>
+    {% endif %}
 
     <div class="actions-row">
       {% set base_url = '/task/' ~ task.project_id ~ '/' ~ task.id ~ '/action' %}
+      {% set confirm_details = ' Notes: ' ~ task.content if task.content else '' %}
 
       <button class="btn done"
               hx-post="{{ base_url }}"
               hx-vals='{"action":"complete"}'
+              hx-confirm="Mark &quot;{{ task.title }}&quot; complete?{{ confirm_details }}"
               hx-target="closest .card"
               hx-swap="outerHTML"
               title="Mark complete">✓ Done</button>
@@ -109,7 +129,7 @@
       <button class="btn danger"
               hx-post="{{ base_url }}"
               hx-vals='{"action":"delete"}'
-              hx-confirm="Delete &quot;{{ task.title }}&quot;? This can't be undone."
+              hx-confirm="Delete &quot;{{ task.title }}&quot;?{{ confirm_details }} This can't be undone."
               hx-target="closest .card"
               hx-swap="outerHTML">Drop</button>
     </div>
