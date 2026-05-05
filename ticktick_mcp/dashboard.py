@@ -23,6 +23,8 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from flask import Flask, abort, jsonify, render_template, request, url_for
 
+from .event_log import DEFAULT_DB_PATH, EventLog
+
 logger = logging.getLogger(__name__)
 
 # Project IDs from CLAUDE.md
@@ -389,7 +391,7 @@ def compute_counts(store: TickTickStore) -> Dict[str, int]:
     }
 
 
-def panel_data(name: str, store: TickTickStore) -> Dict:
+def panel_data(name: str, store: TickTickStore, event_log: Optional[EventLog] = None) -> Dict:
     projects = project_lookup(store)
     tasks = store.all_active_tasks()
     if name == "triage":
@@ -459,6 +461,12 @@ def panel_data(name: str, store: TickTickStore) -> Dict:
         today_items = [t for t in tasks if is_due_today(t)]
         tomorrow_items = [t for t in tasks if is_due_tomorrow(t)]
         unfinished_today = sort_for_today(today_items)
+        completed_today: List[Dict] = []
+        activity_stats: Dict[str, int] = {}
+        if event_log is not None:
+            today_str = event_log.today_local_date()
+            completed_today = event_log.completed_on(today_str)
+            activity_stats = event_log.stats_on(today_str)
         return {
             "title": "End of day",
             "subtitle": "Close out today, set up tomorrow.",
@@ -468,6 +476,8 @@ def panel_data(name: str, store: TickTickStore) -> Dict:
                 (task_view(t, projects) for t in tomorrow_items if is_highlight(t)),
                 None,
             ),
+            "completed_today": completed_today,
+            "activity_stats": activity_stats,
         }
     raise ActionError(f"unknown panel: {name}")
 
@@ -479,7 +489,7 @@ PANELS = ["triage", "today", "tomorrow", "inbox", "waiting", "someday", "eod"]
 # Flask app
 # ---------------------------------------------------------------------------
 
-def create_app(client) -> Flask:
+def create_app(client, event_log: Optional[EventLog] = None) -> Flask:
     package_root = Path(__file__).parent
     app = Flask(
         __name__,
@@ -487,8 +497,11 @@ def create_app(client) -> Flask:
         static_folder=str(package_root / "static"),
     )
     store = TickTickStore(client)
+    if event_log is None:
+        event_log = EventLog(":memory:", DEFAULT_TZ)
     app.config["STORE"] = store
     app.config["CLIENT"] = client
+    app.config["EVENT_LOG"] = event_log
 
     def get_task_or_404(project_id: str, task_id: str) -> Dict:
         for t in store.all_active_tasks():
@@ -528,7 +541,7 @@ def create_app(client) -> Flask:
         if name not in PANELS:
             abort(404)
         try:
-            data = panel_data(name, store)
+            data = panel_data(name, store, app.config.get("EVENT_LOG"))
         except RuntimeError as e:
             return render_template("_error.html", message=str(e)), 502
         return render_template(f"_panel_{name}.html", **data, panel=name)
@@ -551,62 +564,91 @@ def create_app(client) -> Flask:
 
     def _dispatch_action(action: str, task: Dict, form, resp):
         client = app.config["CLIENT"]
+        log: EventLog = app.config["EVENT_LOG"]
+        projects = project_lookup(store)
+        proj_name = (projects.get(task.get("projectId") or "") or {}).get("name")
+
         if action == "complete":
             client.complete_task(task["projectId"], task["id"])
+            log.record("complete", task, project_name=proj_name)
             store.invalidate()
             return resp("")
         if action == "delete":
             client.delete_task(task["projectId"], task["id"])
+            log.record("delete", task, project_name=proj_name)
             store.invalidate()
             return resp("")
-        if action == "today":
-            reschedule_to_date(client, store, task, today_local())
-            return resp("")
-        if action == "tomorrow":
-            reschedule_to_date(client, store, task, today_local() + timedelta(days=1))
-            return resp("")
-        if action == "plus_days":
-            try:
-                n = int(form.get("days", "3"))
-            except ValueError:
-                raise ActionError("days must be an integer")
-            reschedule_to_date(client, store, task, today_local() + timedelta(days=n))
-            return resp("")
-        if action == "specific_date":
-            raw = form.get("date") or ""
-            try:
-                d = date_cls.fromisoformat(raw)
-            except ValueError:
-                raise ActionError(f"bad date: {raw}")
-            reschedule_to_date(client, store, task, d)
+        if action in ("today", "tomorrow", "plus_days", "specific_date"):
+            if action == "today":
+                target = today_local()
+            elif action == "tomorrow":
+                target = today_local() + timedelta(days=1)
+            elif action == "plus_days":
+                try:
+                    n = int(form.get("days", "3"))
+                except ValueError:
+                    raise ActionError("days must be an integer")
+                target = today_local() + timedelta(days=n)
+            else:
+                raw = form.get("date") or ""
+                try:
+                    target = date_cls.fromisoformat(raw)
+                except ValueError:
+                    raise ActionError(f"bad date: {raw}")
+            due_before = task.get("dueDate")
+            reschedule_to_date(client, store, task, target)
+            log.record(
+                "reschedule", task, project_name=proj_name,
+                due_before=due_before,
+                due_after=to_api_iso(workday_morning(target)),
+                details={"kind": action, "target_date": target.isoformat()},
+            )
             return resp("")
         if action == "someday":
+            due_before = task.get("dueDate")
             move_to_someday(client, store, task)
+            log.record(
+                "reschedule", task, project_name=proj_name,
+                due_before=due_before,
+                details={"kind": "someday"},
+            )
             return resp("")
         if action == "set_priority":
             try:
                 p = int(form.get("priority", "0"))
             except ValueError:
                 raise ActionError("priority must be int")
+            before = task.get("priority")
             set_priority(client, store, task, p)
+            log.record(
+                "set_priority", task, project_name=proj_name,
+                priority_before=before, priority_after=p,
+            )
             return resp(_render_card(task["projectId"], task["id"], store))
         if action == "highlight":
             force = form.get("force") == "1"
             existing, new = promote_to_highlight(client, store, task, force=force)
             if existing and new is None:
-                # Need confirmation
-                projects = project_lookup(store)
                 view = task_view(task, projects)
                 existing_view = task_view(existing, projects)
                 html = render_template(
                     "_highlight_conflict.html",
-                    task=view,
-                    existing=existing_view,
+                    task=view, existing=existing_view,
                 )
                 return resp(html, status=200)
+            log.record(
+                "highlight", task, project_name=proj_name,
+                priority_before=task.get("priority"), priority_after=5,
+                details={"demoted_id": existing.get("id") if existing else None,
+                         "demoted_title": existing.get("title") if existing else None},
+            )
             return resp(_render_card(task["projectId"], task["id"], store))
         if action == "unhighlight":
             set_priority(client, store, task, 3)
+            log.record(
+                "unhighlight", task, project_name=proj_name,
+                priority_before=5, priority_after=3,
+            )
             return resp(_render_card(task["projectId"], task["id"], store))
         if action == "assign_inbox":
             pid = form.get("project_id") or ""
@@ -618,6 +660,11 @@ def create_app(client) -> Flask:
             if not pid:
                 raise ActionError("project_id required")
             assign_inbox_task(client, store, task, pid, pri, due)
+            log.record(
+                "assign_inbox", task, project_name=proj_name,
+                priority_before=task.get("priority"), priority_after=pri,
+                details={"target_project_id": pid, "target_due_date": due},
+            )
             return resp("")
         raise ActionError(f"unknown action: {action}")
 
@@ -680,7 +727,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
 
     client = _build_client(args.mock)
-    app = create_app(client)
+    if args.mock:
+        # Keep the demo DB ephemeral so re-runs always start fresh.
+        event_log = EventLog(":memory:", DEFAULT_TZ)
+        from .mock_data import seed_mock_events
+        seed_mock_events(event_log)
+    else:
+        event_log = EventLog(str(DEFAULT_DB_PATH), DEFAULT_TZ)
+        logger.info("event log: %s", DEFAULT_DB_PATH)
+    app = create_app(client, event_log=event_log)
 
     url = f"http://{args.host}:{args.port}/"
     if args.mock:

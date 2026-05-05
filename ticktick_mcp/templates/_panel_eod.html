@@ -7,6 +7,33 @@
   </div>
 
   <div class="eod-grid">
+    {% if activity_stats %}
+      <div class="activity-strip">
+        {% for action, n in activity_stats.items()|sort %}
+          <span class="stat"><strong>{{ n }}</strong> {{ action.replace('_', ' ') }}</span>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if completed_today %}
+      <div class="eod-section">
+        <h3 class="section-label">Completed today ({{ completed_today|length }})</h3>
+        <p class="muted small">From this dashboard's local activity log — the TickTick public API doesn't expose completion history.</p>
+        <ul class="completed-list">
+          {% for ev in completed_today %}
+            <li>
+              <span class="check">✓</span>
+              <span class="ct-title">{{ ev.task_title or '(untitled)' }}</span>
+              {% if ev.project_name %}
+                <span class="ct-project">{{ ev.project_name }}</span>
+              {% endif %}
+              <span class="ct-time">{{ ev.ts[11:16] }}Z</span>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
     <div class="eod-section">
       <h3 class="section-label">Unfinished today ({{ unfinished|length }})</h3>
       <p class="muted small">For each: complete, push to tomorrow, drop, or send to Someday.</p>

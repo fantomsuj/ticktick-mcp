@@ -140,6 +140,22 @@ the cache. Set `TICKTICK_TIMEZONE=America/New_York` etc. to override the
 local timezone used for "today"/"tomorrow" math (defaults to
 `America/Los_Angeles`).
 
+### Activity log (SQLite)
+
+The TickTick public API doesn't expose completion or change history, so
+every dashboard action is appended to a local SQLite database at
+`~/.ticktick-dashboard.db`. The End of Day panel reads from it to show
+"Completed today" plus an action breakdown. In `--mock` mode the log
+lives in `:memory:` and is pre-seeded for the demo.
+
+The schema is one flat `events` table — open it with any SQLite tool:
+
+```bash
+sqlite3 ~/.ticktick-dashboard.db \
+  "SELECT ts_local_date, action, COUNT(*) FROM events
+   GROUP BY ts_local_date, action ORDER BY ts_local_date DESC LIMIT 20;"
+```
+
 ## Usage with Claude for Desktop
 
 1. Install [Claude for Desktop](https://claude.ai/download)

@@ -507,6 +507,28 @@ def _seed_tasks() -> List[Dict]:
     return tasks
 
 
+def seed_mock_events(event_log) -> None:
+    """Pre-seed the in-memory event log so --mock shows 'Completed today'."""
+    samples = [
+        ("complete", "old-completed-1", "699c8a338f088b3b190a1a5d",
+         "🚩 Reply to Acme MSA email", "BR Commercial & BD"),
+        ("complete", "old-completed-2", "6695fb3aab509194d7492975",
+         "🚩 Daily email triage (15 min)", "Routines"),
+        ("complete", "old-completed-3", "6925de124d1951f8c0a709b0",
+         "🚩 Skim morning AI papers digest", "AI Research"),
+        ("reschedule", "t-overdue-2", "693a3b6a34db910305e570fc",
+         "🚩 Push v0.4 release notes", "Tools"),
+        ("set_priority", "t-today-3", "699c8a3c8f088b3b190a1ba1",
+         "🚩 Triage ops Slack backlog", "BR Ops & Intelligence"),
+    ]
+    for action, tid, pid, title, proj in samples:
+        event_log.record(
+            action,
+            {"id": tid, "projectId": pid, "title": title},
+            project_name=proj,
+        )
+
+
 class MockClient:
     """Drop-in replacement for `TickTickClient` for dashboard --mock mode."""
 

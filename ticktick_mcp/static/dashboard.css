@@ -349,6 +349,47 @@ main {
   display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;
 }
 
+.activity-strip {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--fg-mute);
+}
+.activity-strip .stat strong { color: var(--fg); margin-right: 4px; }
+.activity-strip .stat:not(:last-child)::after {
+  content: "·"; color: var(--border); margin-left: 8px;
+}
+
+.completed-list {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.completed-list li {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.completed-list .check {
+  color: var(--good); font-weight: bold;
+}
+.completed-list .ct-title { color: var(--fg); flex: 1; }
+.completed-list .ct-project {
+  color: var(--fg-mute); font-size: 11px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  padding: 1px 8px; border-radius: 99px;
+}
+.completed-list .ct-time {
+  font-size: 11px; color: var(--fg-mute);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 .error-block {
   background: rgba(248,81,73,0.12);
   border: 1px solid rgba(248,81,73,0.4);
