@@ -12,6 +12,7 @@ fast without hammering the API.
 import argparse
 import logging
 import os
+import random
 import sys
 import threading
 import webbrowser
@@ -873,6 +874,29 @@ def recommended_actions(
     return recs[:5]
 
 
+def pick_random_task(
+    tasks: List[Dict],
+    rng: Optional[random.Random] = None,
+    exclude_id: Optional[str] = None,
+) -> Optional[Dict]:
+    """Pick a random active task, skipping parking-lot and blocked work.
+
+    Excludes Someday/Maybe (low priority by definition) and Waiting tasks
+    (blocked on someone else). Inbox captures stay eligible so the picker
+    can also nudge raw items into action.
+    """
+    candidates = [
+        t for t in tasks
+        if t.get("status") != 2
+        and t.get("projectId") != SOMEDAY_PROJECT_ID
+        and not is_waiting(t)
+        and (exclude_id is None or t.get("id") != exclude_id)
+    ]
+    if not candidates:
+        return None
+    return (rng or random).choice(candidates)
+
+
 def home_data(store: TickTickStore, event_log: Optional[EventLog] = None) -> Dict:
     projects = project_lookup(store)
     tasks = store.all_active_tasks()
@@ -1106,6 +1130,17 @@ def create_app(client, event_log: Optional[EventLog] = None) -> Flask:
             panels=PANELS,
             cache=cache_status(store),
         )
+
+    @app.route("/random_task")
+    def random_task():
+        exclude_id = request.args.get("exclude_id") or None
+        try:
+            tasks = store.all_active_tasks()
+        except RuntimeError as e:
+            return render_template("_error.html", message=str(e)), 502
+        chosen = pick_random_task(tasks, exclude_id=exclude_id)
+        view = task_view(chosen, project_lookup(store)) if chosen else None
+        return render_template("_random_task.html", task=view)
 
     @app.route("/task/<project_id>/<task_id>/action", methods=["POST"])
     def task_action(project_id: str, task_id: str):

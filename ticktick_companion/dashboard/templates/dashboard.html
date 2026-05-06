@@ -39,6 +39,13 @@
       >{{ cache.last_refresh_label }}</span>
       <button
         class="ghost"
+        hx-get="{{ url_for('random_task') }}"
+        hx-target="#modal-root"
+        hx-swap="innerHTML"
+        title="Pick a random task to work on"
+      >🎲 Random</button>
+      <button
+        class="ghost"
         hx-post="{{ url_for('refresh') }}"
         hx-swap="none"
         title="Pull fresh data from TickTick"
