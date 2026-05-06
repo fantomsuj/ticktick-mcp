@@ -1,11 +1,14 @@
+import random
 import unittest
 
 from ticktick_companion.dashboard.app import (
     INBOX_PROJECT_ID,
     PANELS,
+    SOMEDAY_PROJECT_ID,
     TickTickStore,
     create_app,
     home_data,
+    pick_random_task,
     project_lookup,
     recommended_actions,
     today_commitment,
@@ -248,6 +251,48 @@ class HomeViewModelTests(unittest.TestCase):
 
         self.assertEqual(data["momentum"]["completed_count"], 1)
         self.assertEqual(data["momentum"]["activity_stats"]["complete"], 1)
+
+
+class RandomTaskPickerTests(unittest.TestCase):
+    def test_skips_someday_and_waiting_tasks(self):
+        tasks = [
+            {"id": "a", "projectId": "p1", "title": "Do thing", "status": 0},
+            {"id": "b", "projectId": SOMEDAY_PROJECT_ID, "title": "Maybe later", "status": 0},
+            {"id": "c", "projectId": "p1", "title": "WAITING: Bob to reply", "status": 0},
+            {"id": "d", "projectId": "p1", "title": "Done", "status": 2},
+        ]
+
+        for seed in range(20):
+            chosen = pick_random_task(tasks, rng=random.Random(seed))
+            self.assertIsNotNone(chosen)
+            self.assertEqual(chosen["id"], "a")
+
+    def test_returns_none_when_no_eligible_tasks(self):
+        tasks = [
+            {"id": "b", "projectId": SOMEDAY_PROJECT_ID, "title": "Park it", "status": 0},
+            {"id": "c", "projectId": "p1", "title": "WAITING: blocked", "status": 0},
+        ]
+        self.assertIsNone(pick_random_task(tasks))
+
+    def test_exclude_id_lets_user_spin_again(self):
+        tasks = [
+            {"id": "a", "projectId": "p1", "title": "First", "status": 0},
+            {"id": "b", "projectId": "p1", "title": "Second", "status": 0},
+        ]
+        chosen = pick_random_task(tasks, rng=random.Random(0), exclude_id="a")
+        self.assertEqual(chosen["id"], "b")
+
+    def test_random_task_route_renders_modal_with_a_real_task(self):
+        log = EventLog(":memory:")
+        app = create_app(MockClient(), event_log=log)
+        app.config["TESTING"] = True
+
+        response = app.test_client().get("/random_task")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"modal-backdrop", response.data)
+        self.assertIn(b"Random task", response.data)
+        self.assertIn(b"Pick another", response.data)
 
 
 if __name__ == "__main__":

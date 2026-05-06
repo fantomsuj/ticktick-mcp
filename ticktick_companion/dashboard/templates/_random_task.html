@@ -1,0 +1,62 @@
+<div class="modal-backdrop"
+     onclick="if (event.target === this) this.remove();">
+  <div class="modal random-task-modal">
+    <h3>🎲 Random task</h3>
+    {% if task %}
+      <div class="random-task">
+        <div class="random-task-title">
+          <span class="random-task-family" style="--c: {{ task.project_color }}">{{ task.project_name }}</span>
+          <strong>{{ task.title }}</strong>
+        </div>
+        <div class="random-task-meta">
+          <span class="prio prio-{{ task.priority }}">{{ task.priority_name }}</span>
+          {% if task.due_label %}
+            <span class="due {% if task.is_overdue %}overdue{% elif task.is_today %}today{% endif %}">{{ task.due_label }}</span>
+          {% else %}
+            <span class="muted small">No due date</span>
+          {% endif %}
+          {% if task.checklist_count %}
+            <span class="checklist-pill">{{ task.checklist_count }} subtask{% if task.checklist_count != 1 %}s{% endif %}</span>
+          {% endif %}
+        </div>
+        {% if task.content %}
+          <details class="random-task-content">
+            <summary>notes</summary>
+            <pre>{{ task.content }}</pre>
+          </details>
+        {% endif %}
+      </div>
+      {% set base_url = '/task/' ~ task.project_id ~ '/' ~ task.id ~ '/action' %}
+      <div class="modal-actions">
+        <button class="btn"
+                onclick="this.closest('.modal-backdrop').remove()">Close</button>
+        <button class="btn"
+                hx-get="/random_task?exclude_id={{ task.id }}"
+                hx-target="closest .modal-backdrop"
+                hx-swap="outerHTML">🎲 Pick another</button>
+        <button class="btn"
+                hx-post="{{ base_url }}"
+                hx-vals='{"action":"today"}'
+                hx-target="closest .modal-backdrop"
+                hx-swap="outerHTML"
+                hx-on::after-request="document.body.dispatchEvent(new Event('refreshCounts')); document.querySelector('.tab.active')?.click()"
+                title="Schedule for today (9 AM)">Move to today</button>
+        <button class="btn primary"
+                hx-post="{{ base_url }}"
+                hx-vals='{"action":"complete"}'
+                hx-confirm="Mark &quot;{{ task.title }}&quot; complete?"
+                hx-target="closest .modal-backdrop"
+                hx-swap="outerHTML"
+                hx-on::after-request="document.body.dispatchEvent(new Event('refreshCounts')); document.querySelector('.tab.active')?.click()">
+          ✓ Done
+        </button>
+      </div>
+    {% else %}
+      <p>No eligible tasks right now. Tasks in Someday and Waiting are skipped.</p>
+      <div class="modal-actions">
+        <button class="btn primary"
+                onclick="this.closest('.modal-backdrop').remove()">Close</button>
+      </div>
+    {% endif %}
+  </div>
+</div>
