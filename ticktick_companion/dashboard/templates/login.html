@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in · TickTick triage</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}" />
+</head>
+<body class="auth-page">
+  <main class="auth-panel" aria-labelledby="login-title">
+    <div class="auth-brand">
+      <span class="logo">✓</span>
+      <h1 id="login-title">TickTick triage</h1>
+    </div>
+    <form method="post" class="auth-form">
+      <input type="hidden" name="next" value="{{ next_url }}" />
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" autofocus required />
+      {% if error %}
+        <p class="auth-error">{{ error }}</p>
+      {% endif %}
+      <button class="primary-button" type="submit">Sign in</button>
+    </form>
+  </main>
+</body>
+</html>

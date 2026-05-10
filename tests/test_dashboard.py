@@ -1,4 +1,13 @@
+import json
+import os
+import tempfile
+import time
 import unittest
+from datetime import datetime, timezone
+from pathlib import Path
+from unittest.mock import patch
+
+import requests
 
 from ticktick_companion.dashboard.app import (
     INBOX_PROJECT_ID,
@@ -7,11 +16,50 @@ from ticktick_companion.dashboard.app import (
     create_app,
     home_data,
     project_lookup,
+    project_pressure_data,
     recommended_actions,
+    recommended_triage_decision,
+    score_task_for_triage,
+    sort_for_recovery,
+    task_view,
+    ticktick_task_url,
+    today_capacity,
     today_commitment,
 )
+from ticktick_companion.api.client import TickTickClient
+from ticktick_companion.api.token_store import TokenStore
 from ticktick_companion.dashboard.event_log import EventLog
 from ticktick_companion.dashboard.mock_data import MockClient
+
+
+class FakeTokenStore(TokenStore):
+    def __init__(self, tokens=None):
+        self.tokens = dict(tokens or {})
+        self.saved = []
+
+    def load_tokens(self):
+        return dict(self.tokens)
+
+    def save_tokens(self, tokens):
+        self.saved.append(dict(tokens))
+        if tokens.get("access_token"):
+            self.tokens["TICKTICK_ACCESS_TOKEN"] = tokens["access_token"]
+        if tokens.get("refresh_token"):
+            self.tokens["TICKTICK_REFRESH_TOKEN"] = tokens["refresh_token"]
+
+
+class FakeResponse:
+    def __init__(self, payload=None, status_code=200, text="{}"):
+        self.payload = payload or {}
+        self.status_code = status_code
+        self.text = text
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.exceptions.HTTPError(f"{self.status_code} error", response=self)
+
+    def json(self):
+        return dict(self.payload)
 
 
 class CountingClient:
@@ -65,8 +113,23 @@ class DashboardEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'TickTick triage', response.data)
         self.assertIn(b"data-panel=\"home\"", response.data)
+        self.assertNotIn(b"data-panel=\"focus\"", response.data)
+        self.assertNotIn(b"data-panel=\"tomorrow\"", response.data)
         self.assertIn(b"hx-get=\"/panel/home\"", response.data)
+        self.assertIn(b"command-bar", response.data)
+        self.assertIn(b"drop-dock", response.data)
+        self.assertIn(b"data-default-drag-target=\"today\"", response.data)
         self.assertEqual(client.project_data_calls, [])
+
+    def test_index_uses_local_assets_and_slow_counts_polling(self):
+        app, _ = self.make_app()
+
+        response = app.test_client().get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"/static/htmx.min.js", response.data)
+        self.assertIn(b"every 5m", response.data)
+        self.assertNotIn(b"every 60s", response.data)
 
     def test_counts_and_all_panels_render_with_mock_data(self):
         app, _ = self.make_app()
@@ -74,8 +137,12 @@ class DashboardEndpointTests(unittest.TestCase):
 
         counts = http.get("/counts")
         self.assertEqual(counts.status_code, 200)
+        self.assertIn("Server-Timing", counts.headers)
+        self.assertEqual(counts.headers["X-TickTick-Cache"], "fresh")
         self.assertIn(b"data-refresh-meta", counts.data)
         self.assertIn(b'data-tab-count="home"', counts.data)
+        self.assertNotIn(b'data-tab-count="focus"', counts.data)
+        self.assertNotIn(b'data-tab-count="tomorrow"', counts.data)
 
         for panel in PANELS:
             with self.subTest(panel=panel):
@@ -89,10 +156,55 @@ class DashboardEndpointTests(unittest.TestCase):
         response = app.test_client().get("/panel/home")
 
         self.assertEqual(response.status_code, 200)
+        self.assertIn("Server-Timing", response.headers)
+        self.assertEqual(response.headers["X-TickTick-Cache"], "miss")
+        self.assertIn(b"Attention", response.data)
+        self.assertNotIn(b"kpi-strip", response.data)
+        self.assertNotIn(b"Today Load", response.data)
+        self.assertIn(b"Daily Planning", response.data)
+        self.assertIn(b"Timebox", response.data)
         self.assertIn(b"Attention Queue", response.data)
         self.assertIn(b"Today Commitment", response.data)
         self.assertIn(b"Next Best Actions", response.data)
+        self.assertIn(b"Project Pressure", response.data)
         self.assertIn(b"Momentum", response.data)
+
+    def test_today_panel_renders_timebox_timeline(self):
+        app, _ = self.make_app()
+
+        response = app.test_client().get("/panel/today")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Today Timeline", response.data)
+        self.assertIn(b"timebox-row", response.data)
+
+    def test_end_of_day_contains_tomorrow_planning(self):
+        app, _ = self.make_app()
+
+        response = app.test_client().get("/panel/eod")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Tomorrow's Highlight", response.data)
+        self.assertIn(b"Tomorrow's lineup", response.data)
+        self.assertIn(b"t-tomorrow", response.data)
+
+    def test_removed_panels_do_not_render(self):
+        app, _ = self.make_app()
+        http = app.test_client()
+
+        self.assertEqual(http.get("/panel/focus").status_code, 404)
+        self.assertEqual(http.get("/panel/tomorrow").status_code, 404)
+
+    def test_recovery_panel_renders_reasons_and_decisions(self):
+        app, _ = self.make_app()
+
+        response = app.test_client().get("/panel/triage")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Recovery Mode", response.data)
+        self.assertIn(b"Today capacity", response.data)
+        self.assertIn(b"Break Down", response.data)
+        self.assertIn(b"Mark Waiting", response.data)
 
     def test_major_actions_succeed_with_mock_data(self):
         actions = [
@@ -144,6 +256,261 @@ class DashboardEndpointTests(unittest.TestCase):
         self.assertIn(b"BR weekly standup notes", response.data)
         self.assertEqual(log.recent(), [])
 
+    def test_today_capacity_guard_intercepts_overload(self):
+        app, _ = self.make_app()
+        response = app.test_client().post(
+            "/task/693a3b6a34db910305e570fc/t-overdue-2/action",
+            data={"action": "today"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Today is already full", response.data)
+        self.assertEqual(response.headers["HX-Retarget"], "#modal-root")
+
+    def test_capacity_override_records_reason_and_moves_task(self):
+        app, log = self.make_app()
+        response = app.test_client().post(
+            "/task/693a3b6a34db910305e570fc/t-overdue-2/action",
+            data={"action": "today", "force_capacity": "1", "reason": "Capacity override"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        events = log.recent()
+        self.assertEqual(events[0]["action"], "reschedule")
+        self.assertEqual(events[0]["details"]["reason"], "Capacity override")
+
+    def test_diagnose_route_returns_non_mutating_suggestions(self):
+        app, _ = self.make_app()
+
+        response = app.test_client().get(
+            "/task/693a3b6a34db910305e570fc/t-overdue-2/diagnose"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Make it actionable", response.data)
+        self.assertIn(b"Rewrite:", response.data)
+
+    def test_large_someday_panel_uses_lazy_card_page(self):
+        client = MockClient()
+        for i in range(30):
+            client._tasks[f"t-someday-extra-{i}"] = {
+                "id": f"t-someday-extra-{i}",
+                "projectId": "69b6e5088f085ebce14b22d6",
+                "title": f"Someday extra {i:02d}",
+                "priority": 0,
+                "status": 0,
+            }
+        app, _ = self.make_app(client)
+
+        response = app.test_client().get("/panel/someday")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Loading more", response.data)
+        self.assertIn(b"/panel/someday/page?offset=25", response.data)
+
+    def test_task_cards_render_ticktick_external_link(self):
+        app, _ = self.make_app()
+
+        response = app.test_client().get("/panel/triage")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            b'href="https://ticktick.com/webapp/#p/69239e3c064f51f8c0a66b2f/tasks/t-overdue-8"',
+            response.data,
+        )
+        self.assertIn(b'target="_blank"', response.data)
+        self.assertIn(b'rel="noopener noreferrer"', response.data)
+        self.assertIn(b"View task in TickTick", response.data)
+
+    def test_inbox_cards_render_ticktick_external_link(self):
+        app, _ = self.make_app()
+
+        response = app.test_client().get("/panel/inbox")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            b'href="https://ticktick.com/webapp/#p/699a5943b1bed115b35b1e10/tasks/t-inbox-1"',
+            response.data,
+        )
+        self.assertIn(b'target="_blank"', response.data)
+
+    def test_home_recommendations_render_ticktick_external_link(self):
+        app, _ = self.make_app()
+
+        response = app.test_client().get("/panel/home")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            b'href="https://ticktick.com/webapp/#p/69239e3c064f51f8c0a66b2f/tasks/t-overdue-8"',
+            response.data,
+        )
+        self.assertIn(b'target="_blank"', response.data)
+
+
+class DashboardAuthTests(unittest.TestCase):
+    def make_protected_app(self, client=None, token_store=None):
+        log = EventLog(":memory:")
+        with patch.dict(os.environ, {
+            "TICKTICK_DASHBOARD_PASSWORD": "secret",
+            "TICKTICK_DASHBOARD_SECRET_KEY": "test-secret-key",
+        }, clear=False):
+            app = create_app(client or MockClient(), event_log=log, token_store=token_store or FakeTokenStore())
+        app.config["TESTING"] = True
+        return app
+
+    def test_unauthenticated_index_redirects_to_login(self):
+        app = self.make_protected_app()
+
+        response = app.test_client().get("/")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers["Location"])
+
+    def test_correct_password_creates_session(self):
+        app = self.make_protected_app()
+        http = app.test_client()
+
+        response = http.post("/login", data={"password": "secret"})
+
+        self.assertEqual(response.status_code, 302)
+        with http.session_transaction() as sess:
+            self.assertTrue(sess["dashboard_authenticated"])
+
+    def test_wrong_password_stays_on_login(self):
+        app = self.make_protected_app()
+
+        response = app.test_client().post("/login", data={"password": "wrong"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Incorrect password", response.data)
+
+    def test_htmx_request_redirects_to_login_header(self):
+        app = self.make_protected_app()
+
+        response = app.test_client().get("/panel/home", headers={"HX-Request": "true"})
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.headers["HX-Redirect"], "/login")
+
+    def test_logout_clears_session(self):
+        app = self.make_protected_app()
+        http = app.test_client()
+        http.post("/login", data={"password": "secret"})
+
+        response = http.get("/logout")
+
+        self.assertEqual(response.status_code, 302)
+        with http.session_transaction() as sess:
+            self.assertNotIn("dashboard_authenticated", sess)
+
+
+class TickTickOAuthRecoveryTests(unittest.TestCase):
+    def test_missing_tokens_render_setup_screen(self):
+        with patch.dict(os.environ, {
+            "TICKTICK_CLIENT_ID": "client",
+            "TICKTICK_CLIENT_SECRET": "secret",
+        }, clear=False):
+            app = create_app(None, event_log=EventLog(":memory:"), token_store=FakeTokenStore())
+        app.config["TESTING"] = True
+
+        response = app.test_client().get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Connect TickTick", response.data)
+        self.assertIn(b"Authorize TickTick", response.data)
+
+    def test_oauth_start_is_protected_by_dashboard_login(self):
+        app = self.make_protected_oauth_app()
+
+        response = app.test_client().get("/auth/ticktick/start")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers["Location"])
+
+    def make_protected_oauth_app(self, token_store=None):
+        with patch.dict(os.environ, {
+            "TICKTICK_CLIENT_ID": "client",
+            "TICKTICK_CLIENT_SECRET": "secret",
+            "TICKTICK_DASHBOARD_PASSWORD": "secret",
+            "TICKTICK_DASHBOARD_SECRET_KEY": "test-secret-key",
+        }, clear=False):
+            app = create_app(None, event_log=EventLog(":memory:"), token_store=token_store or FakeTokenStore())
+        app.config["TESTING"] = True
+        return app
+
+    def test_oauth_callback_rejects_bad_state(self):
+        app = self.make_protected_oauth_app()
+        http = app.test_client()
+        with http.session_transaction() as sess:
+            sess["dashboard_authenticated"] = True
+            sess["ticktick_oauth_state"] = "good"
+
+        response = http.get("/auth/ticktick/callback?code=abc&state=bad")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(b"state did not match", response.data)
+
+    def test_oauth_callback_rejects_missing_code(self):
+        app = self.make_protected_oauth_app()
+        http = app.test_client()
+        with http.session_transaction() as sess:
+            sess["dashboard_authenticated"] = True
+            sess["ticktick_oauth_state"] = "good"
+
+        response = http.get("/auth/ticktick/callback?state=good")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(b"authorization code", response.data)
+
+    def test_successful_oauth_callback_saves_tokens(self):
+        token_store = FakeTokenStore()
+        app = self.make_protected_oauth_app(token_store)
+        http = app.test_client()
+        with http.session_transaction() as sess:
+            sess["dashboard_authenticated"] = True
+            sess["ticktick_oauth_state"] = "good"
+
+        with patch("ticktick_companion.api.oauth.requests.post") as post:
+            post.return_value = FakeResponse({
+                "access_token": "new-access",
+                "refresh_token": "new-refresh",
+            })
+            response = http.get("/auth/ticktick/callback?code=abc&state=good")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(token_store.tokens["TICKTICK_ACCESS_TOKEN"], "new-access")
+        self.assertEqual(token_store.tokens["TICKTICK_REFRESH_TOKEN"], "new-refresh")
+
+    @patch.dict(os.environ, {
+        "TICKTICK_CLIENT_ID": "client",
+        "TICKTICK_CLIENT_SECRET": "secret",
+    }, clear=False)
+    def test_ticktick_client_refresh_saves_tokens_to_store(self):
+        token_store = FakeTokenStore({
+            "TICKTICK_ACCESS_TOKEN": "old-access",
+            "TICKTICK_REFRESH_TOKEN": "old-refresh",
+        })
+        client = TickTickClient(token_store=token_store)
+
+        with patch.object(client._session, "post") as post:
+            post.return_value = FakeResponse({
+                "access_token": "fresh-access",
+                "refresh_token": "fresh-refresh",
+            })
+            refreshed = client._refresh_access_token()
+
+        self.assertTrue(refreshed)
+        self.assertEqual(token_store.tokens["TICKTICK_ACCESS_TOKEN"], "fresh-access")
+        self.assertEqual(token_store.tokens["TICKTICK_REFRESH_TOKEN"], "fresh-refresh")
+
+
+class VercelDeploymentTests(unittest.TestCase):
+    def test_vercel_wsgi_entrypoint_imports(self):
+        with patch.dict(os.environ, {}, clear=False):
+            import api.index as index
+
+        self.assertTrue(hasattr(index, "app"))
+
 
 class TickTickStoreTests(unittest.TestCase):
     def test_cold_refresh_fetches_all_open_projects(self):
@@ -174,6 +541,54 @@ class TickTickStoreTests(unittest.TestCase):
 
         self.assertEqual([t["id"] for t in tasks], ["t-p1"])
         self.assertEqual(store.project_errors, {"p2": "project failed"})
+
+    def test_refresh_saves_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            snapshot = Path(tmp) / "snapshot.json"
+            store = TickTickStore(
+                CountingClient(),
+                ttl_seconds=60,
+                max_workers=2,
+                snapshot_path=snapshot,
+            )
+
+            store.all_active_tasks()
+
+            payload = json.loads(snapshot.read_text())
+            self.assertEqual(len(payload["projects"]), 3)
+            self.assertEqual(set(payload["tasks_by_project"]), {"p1", "p2"})
+
+    def test_snapshot_loads_as_stale_usable_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            snapshot = Path(tmp) / "snapshot.json"
+            snapshot.write_text(json.dumps({
+                "version": 1,
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "projects": [{"id": "p-saved", "name": "Saved", "closed": False}],
+                "tasks_by_project": {
+                    "p-saved": [{
+                        "id": "t-saved",
+                        "projectId": "p-saved",
+                        "title": "Saved task",
+                        "status": 0,
+                    }]
+                },
+            }))
+
+            class SlowClient(CountingClient):
+                def get_projects(self):
+                    time.sleep(0.1)
+                    return super().get_projects()
+
+            store = TickTickStore(
+                SlowClient(),
+                ttl_seconds=60,
+                max_workers=2,
+                snapshot_path=snapshot,
+            )
+
+            self.assertTrue(store.is_stale_snapshot)
+            self.assertEqual(store.all_active_tasks()[0]["id"], "t-saved")
 
 
 class HomeViewModelTests(unittest.TestCase):
@@ -207,7 +622,7 @@ class HomeViewModelTests(unittest.TestCase):
         self.assertEqual(len(commitment["big_things"]), 2)
         self.assertGreaterEqual(commitment["tail_count"], 1)
 
-    def test_stale_overdue_recommendation_ranks_before_lighter_work(self):
+    def test_recovery_recommendation_ranks_high_value_overdue_work(self):
         client = MockClient()
         client._tasks["t-overdue-6"]["priority"] = 3
         store = self.make_store(client)
@@ -216,7 +631,7 @@ class HomeViewModelTests(unittest.TestCase):
         recs = recommended_actions(tasks, project_lookup(store))
 
         self.assertEqual(recs[0]["kind"], "overdue")
-        self.assertEqual(recs[0]["task"]["id"], "t-overdue-9")
+        self.assertEqual(recs[0]["task"]["id"], "t-overdue-8")
         self.assertLess(
             [r["kind"] for r in recs].index("overdue"),
             [r["kind"] for r in recs].index("inbox"),
@@ -248,6 +663,114 @@ class HomeViewModelTests(unittest.TestCase):
 
         self.assertEqual(data["momentum"]["completed_count"], 1)
         self.assertEqual(data["momentum"]["activity_stats"]["complete"], 1)
+
+    def test_home_data_includes_project_pressure(self):
+        client = MockClient()
+        client._tasks["t-overdue-6"]["priority"] = 3
+        store = self.make_store(client)
+
+        data = home_data(store, EventLog(":memory:"))
+
+        self.assertNotIn("metrics", data)
+        self.assertGreater(len(data["project_pressure"]), 0)
+        self.assertIn("bar_percent", data["project_pressure"][0])
+
+    def test_project_pressure_orders_by_overdue_then_today(self):
+        store = self.make_store()
+        projects = project_lookup(store)
+
+        rows = project_pressure_data(store.all_active_tasks(), projects)
+
+        self.assertGreaterEqual(rows[0]["overdue_count"], rows[1]["overdue_count"])
+        self.assertTrue(all(8 <= row["bar_percent"] <= 100 for row in rows))
+
+
+class TaskLinkViewModelTests(unittest.TestCase):
+    @patch.dict(os.environ, {"TICKTICK_BASE_URL": ""})
+    def test_ticktick_task_url_defaults_to_ticktick_webapp(self):
+        self.assertEqual(
+            ticktick_task_url("project id", "task/id"),
+            "https://ticktick.com/webapp/#p/project%20id/tasks/task%2Fid",
+        )
+
+    @patch.dict(os.environ, {"TICKTICK_BASE_URL": "https://api.dida365.com/open/v1"})
+    def test_ticktick_task_url_uses_dida365_for_dida365_api_base(self):
+        self.assertEqual(
+            ticktick_task_url("p1", "t1"),
+            "https://dida365.com/webapp/#p/p1/tasks/t1",
+        )
+
+    @patch.dict(os.environ, {"TICKTICK_BASE_URL": ""})
+    def test_task_view_includes_ticktick_url(self):
+        task = {"id": "t1", "projectId": "p1", "title": "Task", "status": 0}
+
+        view = task_view(task, {"p1": {"name": "Project"}})
+
+        self.assertEqual(
+            view["ticktick_url"],
+            "https://ticktick.com/webapp/#p/p1/tasks/t1",
+        )
+
+
+class RecoveryViewModelTests(unittest.TestCase):
+    def make_store(self, client=None):
+        store = TickTickStore(client or MockClient(), ttl_seconds=60, max_workers=2)
+        store.all_active_tasks()
+        return store
+
+    def test_triage_score_prefers_core_focus_over_low_priority_admin(self):
+        client = MockClient()
+        client._tasks["t-overdue-6"]["priority"] = 3
+        store = self.make_store(client)
+        projects = project_lookup(store)
+        tasks = {t["id"]: t for t in store.all_active_tasks()}
+
+        extensible_score, extensible_reasons = score_task_for_triage(
+            tasks["t-overdue-8"], projects
+        )
+        admin_score, _ = score_task_for_triage(tasks["t-overdue-9"], projects)
+
+        self.assertGreater(extensible_score, admin_score)
+        self.assertIn("Extensible focus area", extensible_reasons)
+
+    def test_repeated_reschedules_make_task_stuck(self):
+        store = self.make_store()
+        projects = project_lookup(store)
+        task = next(t for t in store.all_active_tasks() if t["id"] == "t-overdue-2")
+        log = EventLog(":memory:")
+        for _ in range(3):
+            log.record("reschedule", task)
+
+        view = task_view(task, projects, log)
+
+        self.assertEqual(log.reschedule_count("t-overdue-2"), 3)
+        self.assertTrue(view["is_stuck"])
+        self.assertEqual(view["recommended_decision"], "Break down")
+
+    def test_sort_for_recovery_uses_score_not_only_age(self):
+        client = MockClient()
+        client._tasks["t-overdue-6"]["priority"] = 3
+        store = self.make_store(client)
+        projects = project_lookup(store)
+        overdue = [t for t in store.all_active_tasks() if t["id"] in ("t-overdue-8", "t-overdue-9")]
+
+        ordered = sort_for_recovery(overdue, projects)
+
+        self.assertEqual(ordered[0]["id"], "t-overdue-8")
+
+    def test_recommended_triage_decision_for_old_low_priority_task(self):
+        store = self.make_store()
+        projects = project_lookup(store)
+        task = next(t for t in store.all_active_tasks() if t["id"] == "t-overdue-14")
+
+        self.assertEqual(recommended_triage_decision(task, projects), "Park or Drop")
+
+    def test_today_capacity_reports_overload(self):
+        store = self.make_store()
+        capacity = today_capacity(store.all_active_tasks(), project_lookup(store))
+
+        self.assertGreaterEqual(capacity["count"], capacity["capacity"])
+        self.assertTrue(capacity["is_over_capacity"])
 
 
 if __name__ == "__main__":

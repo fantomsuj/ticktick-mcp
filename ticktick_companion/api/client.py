@@ -1,12 +1,14 @@
 import os
-import json
 import base64
 import time
 import requests
 import logging
-from pathlib import Path
+import threading
 from dotenv import load_dotenv
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Optional
+from requests.adapters import HTTPAdapter
+
+from .token_store import TokenStore, TokenStoreError, default_token_store, load_tokens_with_env_fallback
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -21,17 +23,28 @@ def _env_float(name: str, default: float) -> float:
         logger.warning("Invalid %s value; using %.1fs", name, default)
         return default
 
+
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        logger.warning("Invalid %s value; using %s", name, default)
+        return default
+    return value if value >= minimum else default
+
 class TickTickClient:
     """
     Client for the TickTick API using OAuth2 authentication.
     """
     
-    def __init__(self):
+    def __init__(self, token_store: Optional[TokenStore] = None):
         load_dotenv()
+        self.token_store = token_store or default_token_store()
         self.client_id = os.getenv("TICKTICK_CLIENT_ID")
         self.client_secret = os.getenv("TICKTICK_CLIENT_SECRET")
-        self.access_token = os.getenv("TICKTICK_ACCESS_TOKEN")
-        self.refresh_token = os.getenv("TICKTICK_REFRESH_TOKEN")
+        tokens = load_tokens_with_env_fallback(self.token_store)
+        self.access_token = tokens.get("TICKTICK_ACCESS_TOKEN")
+        self.refresh_token = tokens.get("TICKTICK_REFRESH_TOKEN")
         
         if not self.access_token:
             raise ValueError("TICKTICK_ACCESS_TOKEN environment variable is not set. "
@@ -40,6 +53,12 @@ class TickTickClient:
         self.base_url = os.getenv("TICKTICK_BASE_URL") or "https://api.ticktick.com/open/v1"
         self.token_url = os.getenv("TICKTICK_TOKEN_URL") or "https://ticktick.com/oauth/token"
         self.timeout_seconds = _env_float("TICKTICK_API_TIMEOUT_SECONDS", 10.0)
+        self._auth_lock = threading.Lock()
+        self._session = requests.Session()
+        pool_size = _env_int("TICKTICK_HTTP_POOL_SIZE", _env_int("TICKTICK_DASHBOARD_FETCH_WORKERS", 6))
+        adapter = HTTPAdapter(pool_connections=pool_size, pool_maxsize=pool_size)
+        self._session.mount("https://", adapter)
+        self._session.mount("http://", adapter)
         self.headers = {
             "Authorization": f"Bearer {self.access_token}",
             "Content-Type": "application/json",
@@ -80,7 +99,7 @@ class TickTickClient:
         
         try:
             # Send the token request
-            response = requests.post(
+            response = self._session.post(
                 self.token_url,
                 data=token_data,
                 headers=headers,
@@ -99,13 +118,13 @@ class TickTickClient:
             # Update the headers
             self.headers["Authorization"] = f"Bearer {self.access_token}"
             
-            # Save the tokens to the .env file
+            # Save the tokens to the configured token store.
             self._save_tokens_to_env(tokens)
             
             logger.info("Access token refreshed successfully.")
             return True
             
-        except requests.exceptions.RequestException as e:
+        except (requests.exceptions.RequestException, TokenStoreError) as e:
             logger.error(f"Error refreshing access token: {e}")
             return False
     
@@ -116,48 +135,21 @@ class TickTickClient:
         Args:
             tokens: A dictionary containing the access_token and optionally refresh_token
         """
-        # Load existing .env file content
-        env_path = Path('.env')
-        env_content = {}
-        
-        if env_path.exists():
-            with open(env_path, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith('#') and '=' in line:
-                        key, value = line.split('=', 1)
-                        env_content[key] = value
-        
-        # Update with new tokens
-        env_content["TICKTICK_ACCESS_TOKEN"] = tokens.get('access_token', '')
-        if 'refresh_token' in tokens:
-            env_content["TICKTICK_REFRESH_TOKEN"] = tokens.get('refresh_token', '')
-        
-        # Make sure client credentials are saved as well
-        if self.client_id and "TICKTICK_CLIENT_ID" not in env_content:
-            env_content["TICKTICK_CLIENT_ID"] = self.client_id
-        if self.client_secret and "TICKTICK_CLIENT_SECRET" not in env_content:
-            env_content["TICKTICK_CLIENT_SECRET"] = self.client_secret
-        
-        # Write back to .env file
-        with open(env_path, 'w') as f:
-            for key, value in env_content.items():
-                f.write(f"{key}={value}\n")
-        
-        logger.debug("Tokens saved to .env file")
+        self.token_store.save_tokens(tokens)
+        logger.debug("Tokens saved to token store")
     
     def _send_request(self, method: str, url: str, data=None) -> requests.Response:
         if method == "GET":
-            return requests.get(url, headers=self.headers, timeout=self.timeout_seconds)
+            return self._session.get(url, headers=dict(self.headers), timeout=self.timeout_seconds)
         if method == "POST":
-            return requests.post(
+            return self._session.post(
                 url,
-                headers=self.headers,
+                headers=dict(self.headers),
                 json=data,
                 timeout=self.timeout_seconds,
             )
         if method == "DELETE":
-            return requests.delete(url, headers=self.headers, timeout=self.timeout_seconds)
+            return self._session.delete(url, headers=dict(self.headers), timeout=self.timeout_seconds)
         raise ValueError(f"Unsupported HTTP method: {method}")
 
     def _make_request(self, method: str, endpoint: str, data=None) -> Dict:
@@ -182,7 +174,13 @@ class TickTickClient:
                 logger.info("Access token expired. Attempting to refresh...")
                 
                 # Try to refresh the access token
-                if self._refresh_access_token():
+                with self._auth_lock:
+                    stale_auth = response.request.headers.get("Authorization")
+                    if stale_auth == self.headers.get("Authorization"):
+                        refreshed = self._refresh_access_token()
+                    else:
+                        refreshed = True
+                if refreshed:
                     response = self._send_request(method, url, data)
 
             if method == "GET" and response.status_code in TRANSIENT_STATUS_CODES:

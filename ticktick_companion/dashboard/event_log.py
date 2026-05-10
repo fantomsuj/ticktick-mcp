@@ -99,6 +99,16 @@ class EventLog:
                 ),
             )
 
+    @property
+    def revision(self) -> int:
+        return self.latest_id
+
+    @property
+    def latest_id(self) -> int:
+        with self._lock:
+            row = self._conn.execute("SELECT COALESCE(MAX(id), 0) AS id FROM events").fetchone()
+        return int(row["id"] if row else 0)
+
     def today_local_date(self) -> str:
         return self._local_date_str(datetime.now(timezone.utc))
 
@@ -137,6 +147,26 @@ class EventLog:
                 "SELECT * FROM events ORDER BY id DESC LIMIT ?", (n,),
             ).fetchall()
         return [self._row_to_dict(r) for r in rows]
+
+    def reschedule_count(self, task_id: str) -> int:
+        if not task_id:
+            return 0
+        with self._lock:
+            row = self._conn.execute(
+                """SELECT COUNT(*) AS n FROM events
+                   WHERE task_id = ? AND action = 'reschedule'""",
+                (task_id,),
+            ).fetchone()
+        return int(row["n"] if row else 0)
+
+    def reschedule_counts(self) -> Dict[str, int]:
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT task_id, COUNT(*) AS n FROM events
+                   WHERE task_id IS NOT NULL AND action = 'reschedule'
+                   GROUP BY task_id"""
+            ).fetchall()
+        return {r["task_id"]: int(r["n"]) for r in rows}
 
     @staticmethod
     def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:

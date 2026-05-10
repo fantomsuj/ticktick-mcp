@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Connect TickTick · TickTick triage</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}" />
+</head>
+<body class="auth-page">
+  <main class="auth-panel wide" aria-labelledby="setup-title">
+    <div class="auth-brand">
+      <span class="logo">✓</span>
+      <h1 id="setup-title">Connect TickTick</h1>
+    </div>
+    {% if message %}
+      <p class="auth-error">{{ message }}</p>
+    {% endif %}
+    {% if has_client_credentials %}
+      <p class="auth-copy">Authorize TickTick to refresh the dashboard credentials for this deployment.</p>
+      <a class="primary-button link-button" href="{{ url_for('ticktick_oauth_start') }}">Authorize TickTick</a>
+      <div class="auth-note">
+        <span>Callback URL</span>
+        <code>{{ redirect_uri }}</code>
+      </div>
+    {% else %}
+      <p class="auth-copy">Add TickTick client credentials to the environment, then reload this page.</p>
+      <div class="auth-note">
+        <span>Required</span>
+        <code>TICKTICK_CLIENT_ID</code>
+        <code>TICKTICK_CLIENT_SECRET</code>
+      </div>
+    {% endif %}
+    {% if logged_in %}
+      <a class="subtle-link" href="{{ url_for('logout') }}">Sign out</a>
+    {% endif %}
+  </main>
+</body>
+</html>

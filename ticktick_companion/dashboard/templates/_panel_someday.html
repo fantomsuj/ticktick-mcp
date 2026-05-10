@@ -4,15 +4,13 @@
       <h2>{{ title }}</h2>
       <p class="muted">{{ subtitle }}</p>
     </div>
-    <div class="counter">{{ tasks|length }} parked</div>
+    <div class="counter">{{ total_count|default(tasks|length) }} parked</div>
   </div>
-  {% if tasks|length == 0 %}
+  {% if total_count|default(tasks|length) == 0 %}
     <div class="empty">Someday/Maybe is empty.</div>
   {% else %}
     <div class="card-list compact">
-      {% for task in tasks %}
-        {% include "_card.html" %}
-      {% endfor %}
+      {% include "_cards_page.html" %}
     </div>
   {% endif %}
 </section>

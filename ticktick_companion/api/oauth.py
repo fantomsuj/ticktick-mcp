@@ -9,7 +9,6 @@ without manually copying and pasting tokens.
 import os
 import sys
 import webbrowser
-import json
 import time
 import base64
 import http.server
@@ -17,9 +16,11 @@ import socketserver
 import urllib.parse
 import requests
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Any
+from typing import Dict, Optional
 from dotenv import load_dotenv
 import logging
+
+from .token_store import TokenStore, TokenStoreError, default_token_store
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -141,7 +142,8 @@ class TickTickAuth:
     
     def __init__(self, client_id: str = None, client_secret: str = None, 
                  redirect_uri: str = "http://localhost:8000/callback",
-                 port: int = 8000, env_file: str = None):
+                 port: int = 8000, env_file: str = None,
+                 token_store: Optional[TokenStore] = None):
         """
         Initialize the TickTick authentication manager.
         
@@ -164,6 +166,7 @@ class TickTickAuth:
         self.client_secret = client_secret or os.getenv("TICKTICK_CLIENT_SECRET")
         self.redirect_uri = redirect_uri
         self.port = port
+        self.token_store = token_store or default_token_store()
         self.auth_code = None
         self.tokens = None
         
@@ -273,11 +276,20 @@ class TickTickAuth:
         """
         if not self.auth_code:
             return "No authorization code available. Please start the authentication flow again."
-        
+
+        return self.exchange_authorization_code(self.auth_code)
+
+    def exchange_authorization_code(self, code: str) -> str:
+        """
+        Exchange an authorization code for tokens.
+
+        This is used by both the CLI callback server and the hosted dashboard
+        OAuth callback route.
+        """
         # Prepare the token request
         token_data = {
             "grant_type": "authorization_code",
-            "code": self.auth_code,
+            "code": code,
             "redirect_uri": self.redirect_uri,
             "scope": " ".join(DEFAULT_SCOPES)
         }
@@ -305,9 +317,9 @@ class TickTickAuth:
             # Save the tokens to the .env file
             self._save_tokens_to_env()
             
-            return "Authentication successful! Access token saved to .env file."
+            return "Authentication successful! Access token saved."
             
-        except requests.exceptions.RequestException as e:
+        except (requests.exceptions.RequestException, TokenStoreError) as e:
             logger.error(f"Error exchanging code for token: {e}")
             if hasattr(e, 'response') and e.response is not None:
                 try:
@@ -322,35 +334,8 @@ class TickTickAuth:
         if not self.tokens:
             return
         
-        # Load existing .env file content
-        env_path = Path('.env')
-        env_content = {}
-        
-        if env_path.exists():
-            with open(env_path, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith('#') and '=' in line:
-                        key, value = line.split('=', 1)
-                        env_content[key] = value
-        
-        # Update with new tokens
-        env_content["TICKTICK_ACCESS_TOKEN"] = self.tokens.get('access_token', '')
-        if 'refresh_token' in self.tokens:
-            env_content["TICKTICK_REFRESH_TOKEN"] = self.tokens.get('refresh_token', '')
-        
-        # Make sure client credentials are saved as well
-        if self.client_id and "TICKTICK_CLIENT_ID" not in env_content:
-            env_content["TICKTICK_CLIENT_ID"] = self.client_id
-        if self.client_secret and "TICKTICK_CLIENT_SECRET" not in env_content:
-            env_content["TICKTICK_CLIENT_SECRET"] = self.client_secret
-        
-        # Write back to .env file
-        with open(env_path, 'w') as f:
-            for key, value in env_content.items():
-                f.write(f"{key}={value}\n")
-        
-        logger.info("Tokens saved to .env file")
+        self.token_store.save_tokens(self.tokens)
+        logger.info("Tokens saved to token store")
 
 
 def get_user_input(prompt: str) -> str:

@@ -1,3 +1,4 @@
+{% import "_icons.html" as icons %}
 <section class="panel">
   <div class="panel-head">
     <div>
@@ -6,41 +7,84 @@
     </div>
   </div>
 
-  <div class="today-grid">
-    <div class="today-section">
-      <h3 class="section-label">⭐ Highlight</h3>
-      {% if highlight %}
-        {% set task = highlight %}
-        {% include "_card.html" %}
-      {% else %}
-        <div class="empty">
-          No Highlight set. Click ⭐ on the task that would make today feel like a win.
-        </div>
-      {% endif %}
-    </div>
-
-    <div class="today-section">
-      <h3 class="section-label">Three Big Things</h3>
-      {% if big_three|length == 0 %}
-        <div class="empty">Nothing scheduled for today.</div>
-      {% else %}
-        <div class="card-list">
-          {% for task in big_three %}
-            {% include "_card.html" %}
-          {% endfor %}
-        </div>
-      {% endif %}
-    </div>
-
-    {% if tail|length > 0 %}
+  <div class="today-layout">
+    <div class="today-grid">
       <div class="today-section">
-        <h3 class="section-label">Tail ({{ tail|length }})</h3>
-        <div class="card-list compact">
-          {% for task in tail %}
-            {% include "_card.html" %}
+        <h3 class="section-label with-icon">{{ icons.icon("star", "icon section-icon") }} Highlight</h3>
+        {% if highlight %}
+          {% set task = highlight %}
+          {% include "_card.html" %}
+        {% else %}
+          <div class="empty">
+            No Highlight set. Click the star on the task that would make today feel like a win.
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="today-section">
+        <h3 class="section-label">Three Big Things</h3>
+        {% if big_three|length == 0 %}
+          <div class="empty">Nothing scheduled for today.</div>
+        {% else %}
+          <div class="card-list">
+            {% for task in big_three %}
+              {% include "_card.html" %}
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+
+      {% if tail|length > 0 %}
+        <div class="today-section">
+          <h3 class="section-label">Tail ({{ tail|length }})</h3>
+          <div class="card-list compact">
+            {% for task in tail %}
+              {% include "_card.html" %}
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+    </div>
+
+    <aside class="timebox-panel" aria-label="Today timeline">
+      <header class="timebox-head">
+        <div>
+          <h3>Today Timeline</h3>
+          <p class="muted small">{{ timebox_plan.timed_count }} planned · {{ timebox_plan.untimed_count }} unslotted</p>
+        </div>
+        <span class="timebox-date">{{ tz if tz is defined else "" }}</span>
+      </header>
+
+      {% if timebox_plan.rows|length == 0 %}
+        <div class="empty compact">No timed tasks for today.</div>
+      {% else %}
+        <div class="timebox-list">
+          {% for row in timebox_plan.rows %}
+            <article class="timebox-row{% if row.task.is_highlight %} highlight{% endif %}">
+              <div class="timebox-time">
+                <strong>{{ row.time }}</strong>
+                {% if row.duration %}<span>{{ row.duration }}</span>{% endif %}
+              </div>
+              <div class="timebox-task">
+                <strong>{{ row.task.title }}</strong>
+                <span>{{ row.task.project_name }}</span>
+              </div>
+            </article>
           {% endfor %}
         </div>
-      </div>
-    {% endif %}
+      {% endif %}
+
+      {% if timebox_plan.untimed|length > 0 %}
+        <div class="unslotted-box">
+          <h4>Unslotted</h4>
+          {% for task in timebox_plan.untimed %}
+            <button onclick="document.querySelector('.tab[data-panel=today]')?.click()">
+              <span>{{ task.title }}</span>
+              <small>{{ task.project_name }}</small>
+            </button>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </aside>
   </div>
 </section>

@@ -45,6 +45,8 @@ def main():
     dash_parser.add_argument("--port", type=int, default=8765)
     dash_parser.add_argument("--no-browser", action="store_true")
     dash_parser.add_argument("--debug", action="store_true")
+    dash_parser.add_argument("--profile-load", action="store_true",
+                             help="Print cold/warm dashboard load timings and exit")
 
     args = parser.parse_args()
     
@@ -60,6 +62,7 @@ def main():
         dash_argv += ["--host", args.host, "--port", str(args.port)]
         if args.no_browser: dash_argv.append("--no-browser")
         if args.debug: dash_argv.append("--debug")
+        if args.profile_load: dash_argv.append("--profile-load")
         sys.exit(dashboard_main(dash_argv))
 
     # For the run command, check if auth is set up

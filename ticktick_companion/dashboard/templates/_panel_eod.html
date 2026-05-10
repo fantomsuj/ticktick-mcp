@@ -1,3 +1,4 @@
+{% import "_icons.html" as icons %}
 <section class="panel">
   <div class="panel-head">
     <div>
@@ -22,7 +23,7 @@
         <ul class="completed-list">
           {% for ev in completed_today %}
             <li>
-              <span class="check">✓</span>
+              <span class="check">{{ icons.icon("check") }}</span>
               <span class="ct-title">{{ ev.task_title or '(untitled)' }}</span>
               {% if ev.project_name %}
                 <span class="ct-project">{{ ev.project_name }}</span>
@@ -56,7 +57,7 @@
         {% include "_card.html" %}
       {% else %}
         <div class="empty">
-          No Highlight on tomorrow. From the Tomorrow tab, click ⭐ on the one task that would make tomorrow feel like a win.
+          No Highlight on tomorrow. Click the star on the one task that would make tomorrow feel like a win.
         </div>
       {% endif %}
     </div>

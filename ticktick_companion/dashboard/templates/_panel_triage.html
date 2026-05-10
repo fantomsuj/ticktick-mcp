@@ -4,18 +4,27 @@
       <h2>{{ title }}</h2>
       <p class="muted">{{ subtitle }}</p>
     </div>
-    <div class="counter">{{ tasks|length }} overdue</div>
+    <div class="counter">{{ total_count|default(tasks|length) }} recovery decisions</div>
   </div>
 
-  {% if tasks|length == 0 %}
+  {% if total_count|default(tasks|length) == 0 %}
     <div class="empty good">
-      🎉 Inbox zero on overdue. Switch to <button class="link" onclick="document.querySelector('.tab[data-panel=today]').click()">Today</button>.
+      No overdue recovery decisions. Switch to <button class="link" onclick="document.querySelector('.tab[data-panel=today]').click()">Today</button>.
     </div>
   {% else %}
+    <div class="recovery-summary">
+      <div>
+        <strong>Today capacity</strong>
+        <span>{{ capacity.count }} / {{ capacity.capacity }} non-waiting tasks committed</span>
+      </div>
+      {% if capacity.is_over_capacity %}
+        <p>Today is already full. Moving more work to Today will ask what gets displaced.</p>
+      {% else %}
+        <p>Use Today only for work that belongs in the Highlight + Big Things commitment.</p>
+      {% endif %}
+    </div>
     <div class="card-list">
-      {% for task in tasks %}
-        {% include "_card.html" %}
-      {% endfor %}
+      {% include "_cards_page.html" %}
     </div>
   {% endif %}
 </section>

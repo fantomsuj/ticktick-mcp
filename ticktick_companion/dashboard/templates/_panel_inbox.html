@@ -1,3 +1,4 @@
+{% import "_icons.html" as icons %}
 <section class="panel">
   <div class="panel-head">
     <div>
@@ -8,7 +9,7 @@
   </div>
 
   {% if tasks|length == 0 %}
-    <div class="empty good">Inbox zero ✨</div>
+    <div class="empty good">Inbox zero.</div>
   {% else %}
     <div class="card-list">
       {% for task in tasks %}
@@ -23,7 +24,7 @@
                       type="button"
                       draggable="true"
                       aria-label="Drag task"
-                      title="Drag task">↕</button>
+                      title="Drag task">{{ icons.icon("grip") }}</button>
               <h3 class="card-title">{{ task.title }}</h3>
             </div>
             {% if task.content %}
@@ -59,10 +60,18 @@
                 Due
                 <input type="date" name="due_date" />
               </label>
-              <button class="btn primary" type="submit">Assign →</button>
+              <button class="btn primary" type="submit">Assign {{ icons.icon("arrow-right") }}</button>
             </form>
 
             <div class="actions-row inbox-secondary">
+              {% if task.ticktick_url %}
+                <a class="btn external"
+                   href="{{ task.ticktick_url }}"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   aria-label="View task in TickTick"
+                   title="View task in TickTick">{{ icons.icon("external") }} View</a>
+              {% endif %}
               <button class="btn danger"
                       hx-post="{{ base_url }}"
                       hx-vals='{"action":"delete"}'
@@ -73,7 +82,7 @@
                       hx-post="{{ base_url }}"
                       hx-vals='{"action":"someday"}'
                       hx-target="closest .card"
-                      hx-swap="outerHTML">→ Someday/Maybe</button>
+                      hx-swap="outerHTML">{{ icons.icon("arrow-right") }} Someday/Maybe</button>
             </div>
           </div>
         </article>

@@ -1,69 +1,97 @@
 <!doctype html>
+{% import "_icons.html" as icons %}
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>TickTick triage</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}" />
-  <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css', v=asset_version) }}" />
+  <script src="{{ url_for('static', filename='htmx.min.js', v=asset_version) }}"></script>
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <span class="logo">✓</span>
-      <h1>Triage</h1>
-      <span class="tz">{{ tz }}</span>
-    </div>
-    <nav class="tabs" id="tabs">
-      {% for p in panels %}
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="logo">{{ icons.icon("check", "icon logo-icon") }}</span>
+        <h1>Triage</h1>
+      </div>
+      <nav class="tabs" id="tabs" aria-label="Dashboard panels">
+        {% for p in panels %}
+          <button
+            class="tab"
+            data-panel="{{ p }}"
+            hx-get="{{ url_for('panel', name=p) }}"
+            hx-target="#panel"
+            hx-swap="innerHTML"
+            hx-on::after-request="document.querySelectorAll('.tab').forEach(t => t.classList.remove('active')); this.classList.add('active');"
+          >
+            <span class="tab-label">
+              <span class="tab-icon" aria-hidden="true">
+                {% if p == 'home' %}{{ icons.icon("home") }}{% elif p == 'triage' %}{{ icons.icon("recovery") }}{% elif p == 'today' %}{{ icons.icon("calendar") }}{% elif p == 'inbox' %}{{ icons.icon("inbox") }}{% elif p == 'waiting' %}{{ icons.icon("clock") }}{% elif p == 'someday' %}{{ icons.icon("diamond") }}{% else %}{{ icons.icon("moon") }}{% endif %}
+              </span>
+              {% if p == 'home' %}Home{% elif p == 'triage' %}Recovery{% elif p == 'eod' %}End of Day{% else %}{{ p|capitalize }}{% endif %}
+            </span>
+            <span class="badge" data-count="{{ p }}">
+              {% if counts.get(p) %}{{ counts[p] }}{% endif %}
+            </span>
+          </button>
+        {% endfor %}
+      </nav>
+      <div class="sync-status">
+          <span class="sync-dot{% if cache.is_refreshing %} pulsing{% endif %}"></span>
+        <span>{% if cache.is_stale %}Saved snapshot{% else %}Sync with TickTick{% endif %}</span>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="command-bar">
+        <div class="command-meta">
+          <span class="tz">{{ tz }}</span>
+          <span
+            id="refresh-meta"
+            class="refresh-meta{% if cache.last_refresh_error %} error{% endif %}"
+            title="{{ cache.last_refresh_error }}"
+          >{{ cache.last_refresh_label }}</span>
+        </div>
         <button
-          class="tab"
-          data-panel="{{ p }}"
-          hx-get="{{ url_for('panel', name=p) }}"
-          hx-target="#panel"
-          hx-swap="innerHTML"
-          hx-on::after-request="document.querySelectorAll('.tab').forEach(t => t.classList.remove('active')); this.classList.add('active');"
-        >
-          {% if p == 'home' %}Home{% elif p == 'focus' %}Focus{% elif p == 'triage' %}Overdue{% elif p == 'eod' %}End of Day{% else %}{{ p|capitalize }}{% endif %}
-          <span class="badge" data-count="{{ p }}">
-            {% if counts.get(p) %}{{ counts[p] }}{% endif %}
-          </span>
-        </button>
-      {% endfor %}
-    </nav>
-    <div class="actions">
-      <span
-        id="refresh-meta"
-        class="refresh-meta{% if cache.last_refresh_error %} error{% endif %}"
-        title="{{ cache.last_refresh_error }}"
-      >{{ cache.last_refresh_label }}</span>
-      <button
-        class="ghost"
-        hx-post="{{ url_for('refresh') }}"
-        hx-swap="none"
-        title="Pull fresh data from TickTick"
-      >↻ Refresh</button>
+          class="ghost"
+          hx-post="{{ url_for('refresh') }}"
+          hx-swap="none"
+          title="Pull fresh data from TickTick"
+        >{{ icons.icon("refresh") }} Refresh</button>
+        {% if config.DASHBOARD_AUTH_ENABLED %}
+          <a class="ghost link-ghost" href="{{ url_for('logout') }}">Sign out</a>
+        {% endif %}
+      </header>
+
+      <div class="drop-dock" aria-label="Task move targets" data-default-drag-target="today">
+        <span class="dock-label">Drag tasks here to plan</span>
+        <div class="drop-zone target-today" data-drag-target="today">Today</div>
+        <div class="drop-zone target-tomorrow" data-drag-target="tomorrow">Tomorrow</div>
+        <div class="drop-zone target-week" data-drag-target="week">+3d</div>
+        <div class="drop-zone target-waiting" data-drag-target="waiting">Waiting</div>
+        <div class="drop-zone target-someday" data-drag-target="someday">Someday</div>
+      </div>
+
+      <main
+        id="panel"
+        {% if not initial_home_html %}hx-get="{{ url_for('panel', name='home') }}" hx-trigger="load"{% endif %}
+      >
+        {% if initial_home_html %}
+          {{ initial_home_html|safe }}
+        {% else %}
+          <div class="loading">Loading…</div>
+        {% endif %}
+      </main>
     </div>
-  </header>
-
-  <div class="drop-dock" aria-label="Task move targets">
-    <div class="drop-zone target-today" data-drag-target="today">Today</div>
-    <div class="drop-zone target-tomorrow" data-drag-target="tomorrow">Tomorrow</div>
-    <div class="drop-zone target-week" data-drag-target="week">+3d</div>
-    <div class="drop-zone target-waiting" data-drag-target="waiting">Waiting</div>
-    <div class="drop-zone target-someday" data-drag-target="someday">Someday</div>
   </div>
-
-  <main id="panel" hx-get="{{ url_for('panel', name='home') }}" hx-trigger="load">
-    <div class="loading">Loading…</div>
-  </main>
 
   <div id="modal-root"></div>
 
   <div
     id="counts"
     hx-get="{{ url_for('counts') }}"
-    hx-trigger="load, refreshCounts from:body, every 60s"
+    hx-trigger="load, refreshCounts from:body, every 5m"
     hx-swap="innerHTML"
     style="display:none"
   ></div>
@@ -101,19 +129,30 @@
       document.querySelector('.tab.active')?.click();
     });
 
-    // Keyboard shortcuts: 1..9 jump to tabs, r refreshes.
+    // Keyboard shortcuts: 1..7 jump to tabs, r refreshes.
     document.addEventListener('keydown', (e) => {
       if (e.target.matches('input,textarea,select')) return;
-      const map = {'1':'home','2':'focus','3':'triage','4':'today','5':'tomorrow','6':'inbox','7':'waiting','8':'someday','9':'eod'};
+      const map = {'1':'home','2':'triage','3':'today','4':'inbox','5':'waiting','6':'someday','7':'eod'};
       if (map[e.key]) {
         const tab = document.querySelector(`.tab[data-panel="${map[e.key]}"]`);
         if (tab) tab.click();
       } else if (e.key === 'r' && !e.metaKey && !e.ctrlKey) {
-        document.querySelector('.actions .ghost')?.click();
+        document.querySelector('.command-bar .ghost')?.click();
       }
     });
 
     let draggedTask = null;
+
+    function dragTargetFrom(element) {
+      const zone = element.closest('[data-drag-target]');
+      if (zone) return zone;
+      const dock = element.closest('[data-default-drag-target]');
+      return dock || null;
+    }
+
+    function targetNameFor(element) {
+      return element.dataset.dragTarget || element.dataset.defaultDragTarget || '';
+    }
 
     document.addEventListener('dragstart', (e) => {
       const handle = e.target.closest('.drag-handle');
@@ -124,6 +163,7 @@
         taskId: card.dataset.taskId,
         projectId: card.dataset.projectId,
       };
+      document.body.classList.add('drag-active');
       card.classList.add('dragging');
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', JSON.stringify(draggedTask));
@@ -132,31 +172,33 @@
     document.addEventListener('dragend', () => {
       document.querySelectorAll('.card.dragging').forEach(card => card.classList.remove('dragging'));
       document.querySelectorAll('.drop-zone.drag-over').forEach(zone => zone.classList.remove('drag-over'));
+      document.querySelectorAll('.drop-dock.drag-over').forEach(dock => dock.classList.remove('drag-over'));
+      document.body.classList.remove('drag-active');
       draggedTask = null;
     });
 
     document.addEventListener('dragover', (e) => {
-      const zone = e.target.closest('[data-drag-target]');
-      if (!zone || !draggedTask) return;
+      const target = dragTargetFrom(e.target);
+      if (!target || !draggedTask) return;
       e.preventDefault();
-      zone.classList.add('drag-over');
+      target.classList.add('drag-over');
       e.dataTransfer.dropEffect = 'move';
     });
 
     document.addEventListener('dragleave', (e) => {
-      const zone = e.target.closest('[data-drag-target]');
-      if (zone) zone.classList.remove('drag-over');
+      const target = dragTargetFrom(e.target);
+      if (target) target.classList.remove('drag-over');
     });
 
     document.addEventListener('drop', async (e) => {
-      const zone = e.target.closest('[data-drag-target]');
-      if (!zone || !draggedTask) return;
+      const target = dragTargetFrom(e.target);
+      if (!target || !draggedTask) return;
       e.preventDefault();
-      zone.classList.remove('drag-over');
-      zone.classList.add('is-saving');
+      target.classList.remove('drag-over');
+      target.classList.add('is-saving');
 
       const form = new FormData();
-      form.append('target', zone.dataset.dragTarget);
+      form.append('target', targetNameFor(target));
       try {
         const res = await fetch(`/task/${draggedTask.projectId}/${draggedTask.taskId}/drag`, {
           method: 'POST',
@@ -167,10 +209,10 @@
         document.querySelector('.tab.active')?.click();
       } catch (err) {
         console.error(err);
-        zone.classList.add('drop-error');
-        setTimeout(() => zone.classList.remove('drop-error'), 1200);
+        target.classList.add('drop-error');
+        setTimeout(() => target.classList.remove('drop-error'), 1200);
       } finally {
-        zone.classList.remove('is-saving');
+        target.classList.remove('is-saving');
       }
     });
   </script>
