@@ -1,0 +1,13 @@
+{% for task in tasks %}
+  {% include "_card.html" %}
+{% endfor %}
+{% if next_offset %}
+  <div
+    class="lazy-sentinel"
+    hx-get="{{ url_for('panel_page', name=panel, offset=next_offset) }}"
+    hx-trigger="revealed once"
+    hx-swap="outerHTML"
+  >
+    Loading more...
+  </div>
+{% endif %}

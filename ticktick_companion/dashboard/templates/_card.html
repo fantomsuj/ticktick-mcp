@@ -1,4 +1,5 @@
 {# Single task card. The actions row is reused across panels. #}
+{% import "_icons.html" as icons %}
 <article class="card priority-{{ task.priority }}{% if task.is_highlight %} highlight{% endif %}{% if task.is_waiting %} waiting{% endif %}"
          data-task-id="{{ task.id }}"
          data-project-id="{{ task.project_id }}"
@@ -11,7 +12,7 @@
                 type="button"
                 draggable="true"
                 aria-label="Drag task"
-                title="Drag task">↕</button>
+                title="Drag task">{{ icons.icon("grip") }}</button>
         <h3 class="card-title">{{ task.title }}</h3>
       </div>
       <div class="card-meta">
@@ -25,12 +26,26 @@
         {% if task.days_overdue >= 3 %}
           <span class="stale-flag">stale {{ task.days_overdue }}d</span>
         {% endif %}
+        {% if task.is_stuck %}
+          <span class="stuck-flag">pushed {{ task.reschedule_count }}x</span>
+        {% elif task.reschedule_count %}
+          <span class="reschedule-pill">pushed {{ task.reschedule_count }}x</span>
+        {% endif %}
         {% if task.checklist_count %}
           <span class="checklist-pill">{{ task.checklist_count }} subtask{% if task.checklist_count != 1 %}s{% endif %}</span>
         {% endif %}
         <span class="prio prio-{{ task.priority }}" title="Priority: {{ task.priority_name }}">{{ task.priority_name }}</span>
       </div>
     </header>
+    {% if panel == 'triage' %}
+      <div class="recovery-note{% if task.is_stuck %} stuck{% endif %}">
+        <strong>{{ task.recommended_decision }}</strong>
+        {% if task.triage_reasons %}
+          <span>{{ task.triage_reasons|join(" · ") }}</span>
+        {% endif %}
+      </div>
+      <div id="diagnosis-{{ task.id }}"></div>
+    {% endif %}
     {% if task.content %}
       <details class="card-content">
         <summary>notes</summary>
@@ -45,67 +60,108 @@
       {% set base_url = '/task/' ~ task.project_id ~ '/' ~ task.id ~ '/action' %}
       {% set confirm_details = ' Notes: ' ~ task.content if task.content else '' %}
 
-      <button class="btn done"
-              hx-post="{{ base_url }}"
-              hx-vals='{"action":"complete"}'
-              hx-confirm="Mark &quot;{{ task.title }}&quot; complete?{{ confirm_details }}"
-              hx-target="closest .card"
-              hx-swap="outerHTML"
-              title="Mark complete">✓ Done</button>
+      <div class="action-group primary-actions">
+        {% if task.ticktick_url %}
+          <a class="btn external"
+             href="{{ task.ticktick_url }}"
+             target="_blank"
+             rel="noopener noreferrer"
+             aria-label="View task in TickTick"
+             title="View task in TickTick">{{ icons.icon("external") }} View</a>
+        {% endif %}
+        <button class="btn done"
+                hx-post="{{ base_url }}"
+                hx-vals='{"action":"complete"}'
+                hx-confirm="Mark &quot;{{ task.title }}&quot; complete?{{ confirm_details }}"
+                hx-target="closest .card"
+                hx-swap="outerHTML"
+                title="Mark complete">{{ icons.icon("check") }} Done</button>
+      </div>
 
       {% if panel == 'inbox' %}
         {# Inbox cards have their own assign form below; no reschedule shortcuts #}
       {% else %}
-        <button class="btn"
-                hx-post="{{ base_url }}"
-                hx-vals='{"action":"today"}'
-                hx-target="closest .card"
-                hx-swap="outerHTML"
-                title="Move to today (9:00 AM)">Today</button>
+        <div class="action-group schedule-actions">
+          {% if panel == 'triage' %}
+            <select class="reschedule-reason" name="reason" aria-label="Decision reason">
+              <option value="">Reason</option>
+              <option value="No time">No time</option>
+              <option value="Blocked">Blocked</option>
+              <option value="Too vague">Too vague</option>
+              <option value="Low value">Low value</option>
+              <option value="Waiting">Waiting</option>
+              <option value="Needs breakdown">Needs breakdown</option>
+            </select>
+          {% endif %}
+          <button class="btn plan-primary"
+                  hx-post="{{ base_url }}"
+                  hx-vals='{"action":"today"}'
+                  hx-include="closest .card"
+                  hx-target="closest .card"
+                  hx-swap="outerHTML"
+                  title="Move to today (9:00 AM)">Do Today</button>
 
-        <button class="btn"
-                hx-post="{{ base_url }}"
-                hx-vals='{"action":"tomorrow"}'
-                hx-target="closest .card"
-                hx-swap="outerHTML">Tomorrow</button>
+          <button class="btn plan-secondary"
+                  hx-post="{{ base_url }}"
+                  hx-vals='{"action":"tomorrow"}'
+                  hx-include="closest .card"
+                  hx-target="closest .card"
+                  hx-swap="outerHTML">Tomorrow</button>
 
-        <button class="btn small"
-                hx-post="{{ base_url }}"
-                hx-vals='{"action":"plus_days","days":"3"}'
-                hx-target="closest .card"
-                hx-swap="outerHTML">+3d</button>
+          <button class="btn small"
+                  hx-post="{{ base_url }}"
+                  hx-vals='{"action":"plus_days","days":"3"}'
+                  hx-include="closest .card"
+                  hx-target="closest .card"
+                  hx-swap="outerHTML">+3d</button>
 
-        <button class="btn small"
-                hx-post="{{ base_url }}"
-                hx-vals='{"action":"plus_days","days":"7"}'
-                hx-target="closest .card"
-                hx-swap="outerHTML">+1w</button>
+          <button class="btn small"
+                  hx-post="{{ base_url }}"
+                  hx-vals='{"action":"plus_days","days":"7"}'
+                  hx-include="closest .card"
+                  hx-target="closest .card"
+                  hx-swap="outerHTML">+1w</button>
 
-        <label class="btn date-pick">
-          📅
-          <input type="date"
-                 hx-post="{{ base_url }}"
-                 hx-vals='js:{action:"specific_date",date:event.target.value}'
-                 hx-target="closest .card"
-                 hx-swap="outerHTML"
-                 hx-trigger="change" />
-        </label>
+          <label class="btn date-pick" aria-label="Pick a due date" title="Pick a due date">
+            {{ icons.icon("calendar") }}
+            <input type="date"
+                   hx-post="{{ base_url }}"
+                   hx-vals='js:{action:"specific_date",date:event.target.value}'
+                   hx-include="closest .card"
+                   hx-target="closest .card"
+                   hx-swap="outerHTML"
+                   hx-trigger="change" />
+          </label>
 
-        <button class="btn"
-                hx-post="{{ base_url }}"
-                hx-vals='{"action":"someday"}'
-                hx-target="closest .card"
-                hx-swap="outerHTML"
-                title="Move to Someday/Maybe">Someday</button>
+          <button class="btn plan-secondary"
+                  hx-post="{{ base_url }}"
+                  hx-vals='{"action":"someday"}'
+                  hx-include="closest .card"
+                  hx-target="closest .card"
+                  hx-swap="outerHTML"
+                  title="Move to Someday/Maybe">Park</button>
+
+          {% if panel == 'triage' %}
+            <button class="btn"
+                    hx-get="/task/{{ task.project_id }}/{{ task.id }}/diagnose"
+                    hx-target="#diagnosis-{{ task.id }}"
+                    hx-swap="innerHTML">Break Down</button>
+            <button class="btn"
+                    hx-post="{{ base_url }}"
+                    hx-vals='{"action":"waiting"}'
+                    hx-target="closest .card"
+                    hx-swap="outerHTML">Mark Waiting</button>
+          {% endif %}
+        </div>
       {% endif %}
 
-      <div class="prio-set">
+      <div class="action-group priority-actions prio-set">
         <button class="prio-btn prio-5{% if task.priority == 5 %} on{% endif %}"
                 hx-post="{{ base_url }}"
                 hx-vals='{"action":"highlight"}'
                 hx-target="#modal-root"
                 hx-swap="innerHTML"
-                title="Set as today's Highlight (priority High, only one allowed)">⭐</button>
+                title="Set as today's Highlight (priority High, only one allowed)">{{ icons.icon("star", "icon prio-icon") }}</button>
         <button class="prio-btn prio-3{% if task.priority == 3 %} on{% endif %}"
                 hx-post="{{ base_url }}"
                 hx-vals='{"action":"set_priority","priority":"3"}'
@@ -123,15 +179,17 @@
                 hx-vals='{"action":"set_priority","priority":"0"}'
                 hx-target="closest .card"
                 hx-swap="outerHTML"
-                title="No priority">·</button>
+                title="No priority">N</button>
       </div>
 
-      <button class="btn danger"
-              hx-post="{{ base_url }}"
-              hx-vals='{"action":"delete"}'
-              hx-confirm="Delete &quot;{{ task.title }}&quot;?{{ confirm_details }} This can't be undone."
-              hx-target="closest .card"
-              hx-swap="outerHTML">Drop</button>
+      <div class="action-group destructive-actions">
+        <button class="btn danger"
+                hx-post="{{ base_url }}"
+                hx-vals='{"action":"delete"}'
+                hx-confirm="Delete &quot;{{ task.title }}&quot;?{{ confirm_details }} This can't be undone."
+                hx-target="closest .card"
+                hx-swap="outerHTML">Drop</button>
+      </div>
     </div>
   </div>
 </article>

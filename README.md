@@ -7,7 +7,7 @@ TickTick OAuth setup and an MCP integration for Claude and other MCP clients.
 
 ## What It Does
 
-- Runs a local dashboard for daily triage, Today/Tomorrow planning, Inbox
+- Runs a local dashboard for daily triage, Today planning, Inbox
   processing, Waiting tasks, Someday review, and End of Day closeout.
 - Enforces a single Highlight task by managing TickTick High priority and the
   `⭐ ` title prefix.
@@ -80,27 +80,24 @@ The dashboard is the primary TickTick Companion workflow. It reuses the same
 `.env` tokens as the MCP integration and writes changes through the TickTick
 Open API.
 
-The dashboard has nine tabs:
+The dashboard has seven tabs:
 
 - **Home**: a decision cockpit for attention items, today's commitment, next
   recommended actions, and today's local activity momentum.
-- **Focus**: clusters active work by area so you can scan open loops across
-  related projects.
 - **Overdue**: shows every overdue task, oldest first, with actions to move it
   to Today, Tomorrow, +3d, +1w, a specific date, Someday, Done, or Drop.
 - **Today**: groups the Highlight, Three Big Things, and the remaining tail of
   today's work.
-- **Tomorrow**: shows what is already lined up for tomorrow.
 - **Inbox**: lets you assign captured tasks to a project, priority, and due
   date in one pass.
 - **Waiting**: collects tasks titled with the `WAITING:` prefix.
 - **Someday**: supports weekly review scans of low-urgency tasks.
 - **End of Day**: shows completed work, action counts, unfinished tasks, and
-  tools to set tomorrow's Highlight.
+  tomorrow's lineup with tools to set tomorrow's Highlight.
 
 Keyboard shortcuts:
 
-- `1` through `9` switch tabs.
+- `1` through `7` switch tabs.
 - `r` refreshes from the TickTick API.
 
 Highlight behavior:
@@ -115,8 +112,20 @@ Caching and timezone:
 
 - API reads are cached for 30 seconds to keep dashboard interactions quick.
 - The Refresh button and `r` shortcut drop the cache.
+- Real dashboard runs save the last successful project/task snapshot to
+  `~/.ticktick-dashboard-cache.json`, render it immediately on startup, and
+  refresh live TickTick data in the background.
+- Panel and counts responses include `Server-Timing` and `X-TickTick-Cache`
+  headers for local load-speed debugging.
 - Set `TICKTICK_TIMEZONE=America/New_York` or another IANA timezone in `.env`
   to override the default local date math.
+
+Profile dashboard data loading without opening the browser:
+
+```bash
+ticktick-companion dashboard --profile-load
+ticktick-companion-dashboard --profile-load
+```
 
 ### Activity Log
 
@@ -149,6 +158,52 @@ Re-run this command if you revoke access or delete `.env`:
 
 ```bash
 ticktick-companion auth
+```
+
+For the hosted dashboard, the app also exposes an in-browser recovery flow at
+`/auth/ticktick/start`. If the TickTick token expires or is revoked, sign in to
+the dashboard and click **Authorize TickTick** on the setup screen. Add the
+hosted callback URL to your TickTick Developer Center app:
+
+```text
+https://<your-domain>/auth/ticktick/callback
+```
+
+## Deploying to Vercel
+
+This repository includes `api/index.py` and `vercel.json` for Vercel's Python
+runtime. The hosted app uses the same Flask dashboard with a single-password
+login gate and stores refreshed TickTick OAuth tokens in Upstash Redis.
+
+Required Vercel environment variables:
+
+```env
+TICKTICK_CLIENT_ID=
+TICKTICK_CLIENT_SECRET=
+TICKTICK_DASHBOARD_PASSWORD=
+TICKTICK_DASHBOARD_SECRET_KEY=
+UPSTASH_REDIS_REST_URL=
+UPSTASH_REDIS_REST_TOKEN=
+```
+
+Optional bootstrap or override variables:
+
+```env
+TICKTICK_ACCESS_TOKEN=
+TICKTICK_REFRESH_TOKEN=
+TICKTICK_REDIRECT_URI=https://<your-domain>/auth/ticktick/callback
+TICKTICK_TOKEN_STORE_PREFIX=ticktick_companion
+```
+
+Initial access and refresh tokens can be pasted into Vercel env vars once, but
+after the first hosted OAuth flow the app saves renewed tokens to Upstash rather
+than trying to mutate Vercel environment variables.
+
+Deploy from a linked project:
+
+```bash
+vercel
+vercel --prod
 ```
 
 ### Dida365
