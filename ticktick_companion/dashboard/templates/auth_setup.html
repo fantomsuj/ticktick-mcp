@@ -15,12 +15,19 @@
     {% if message %}
       <p class="auth-error">{{ message }}</p>
     {% endif %}
-    {% if has_client_credentials %}
+    {% if can_authorize %}
       <p class="auth-copy">Authorize TickTick to refresh the dashboard credentials for this deployment.</p>
       <a class="primary-button link-button" href="{{ url_for('ticktick_oauth_start') }}">Authorize TickTick</a>
       <div class="auth-note">
         <span>Callback URL</span>
         <code>{{ redirect_uri }}</code>
+      </div>
+    {% elif has_client_credentials and missing_hosted_store %}
+      <p class="auth-copy">Add durable token storage to this hosted deployment, then reload this page.</p>
+      <div class="auth-note">
+        <span>Required on Vercel</span>
+        <code>UPSTASH_REDIS_REST_URL</code>
+        <code>UPSTASH_REDIS_REST_TOKEN</code>
       </div>
     {% else %}
       <p class="auth-copy">Add TickTick client credentials to the environment, then reload this page.</p>

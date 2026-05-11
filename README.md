@@ -1,22 +1,25 @@
 # TickTick Companion
 
-TickTick Companion is a local productivity companion for TickTick. Its main
-surface is a fast triage dashboard for planning today, clearing overdue work,
-processing Inbox captures, and closing the day. It also includes the same
-TickTick OAuth setup and an MCP integration for Claude and other MCP clients.
+TickTick Companion is a focused TickTick triage tool. Its main surface is a
+fast dashboard for deciding what deserves attention now: planning today,
+recovering overdue work, processing Inbox captures, tracking Waiting items, and
+closing the day cleanly.
+
+The MCP server is intentionally secondary. It exists as an agent bridge so
+Claude or another MCP client can inspect and update the same TickTick data while
+helping build, debug, or operate this app. The product experience should stay
+centered on effective personal triage, not on being a general-purpose MCP demo.
 
 ## What It Does
 
 - Runs a local dashboard for daily triage, Today planning, Inbox
   processing, Waiting tasks, Someday review, and End of Day closeout.
-- Enforces a single Highlight task by managing TickTick High priority and the
-  `⭐ ` title prefix.
 - Records local dashboard actions in SQLite so the End of Day view can show
   completed tasks and action counts.
 - Provides a `ticktick-companion` CLI for authentication, dashboard launch, and
-  MCP server startup.
-- Exposes TickTick projects and tasks to Claude through MCP tools when you want
-  conversational task management.
+  optional agent access.
+- Exposes TickTick projects and tasks through MCP when an agent needs to help
+  inspect, repair, or extend the triage workflow.
 
 ## Prerequisites
 
@@ -82,31 +85,22 @@ Open API.
 
 The dashboard has seven tabs:
 
-- **Home**: a decision cockpit for attention items, today's commitment, next
+- **Home**: a decision cockpit for attention items, today's work, next
   recommended actions, and today's local activity momentum.
 - **Overdue**: shows every overdue task, oldest first, with actions to move it
   to Today, Tomorrow, +3d, +1w, a specific date, Someday, Done, or Drop.
-- **Today**: groups the Highlight, Three Big Things, and the remaining tail of
-  today's work.
+- **Today**: shows everything scheduled for today, ordered by priority and time.
 - **Inbox**: lets you assign captured tasks to a project, priority, and due
   date in one pass.
 - **Waiting**: collects tasks titled with the `WAITING:` prefix.
 - **Someday**: supports weekly review scans of low-urgency tasks.
 - **End of Day**: shows completed work, action counts, unfinished tasks, and
-  tomorrow's lineup with tools to set tomorrow's Highlight.
+  tomorrow's lineup.
 
 Keyboard shortcuts:
 
 - `1` through `7` switch tabs.
 - `r` refreshes from the TickTick API.
-
-Highlight behavior:
-
-- High priority (`5`) is treated as the one daily Highlight.
-- Clicking the Highlight control on a second task opens a confirmation modal.
-- On confirmation, the previous Highlight is demoted to Medium priority and the
-  new task gets the `⭐ ` title prefix.
-- When a task is demoted from Highlight, the prefix is removed automatically.
 
 Caching and timezone:
 
@@ -219,10 +213,12 @@ TICKTICK_AUTH_URL='https://dida365.com/oauth/authorize'
 TICKTICK_TOKEN_URL='https://dida365.com/oauth/token'
 ```
 
-## MCP Integration
+## Optional MCP Agent Bridge
 
-Use the MCP integration when you want Claude or another MCP client to read and
-update TickTick through TickTick Companion.
+Use the MCP integration when Claude or another MCP client needs to read and
+update TickTick through TickTick Companion. Treat it as support infrastructure:
+useful for agent-assisted development and maintenance, but not the primary user
+interface or the reason the app exists.
 
 Run the MCP server locally:
 
@@ -262,7 +258,9 @@ ticktick-companion run
 
 4. Restart Claude Desktop.
 
-Once connected, Claude will show the TickTick tools in its tool menu.
+Once connected, Claude will show the TickTick tools in its tool menu. Agent
+changes should follow the same triage rules as the dashboard so the app remains
+the source of truth for daily planning.
 
 ### MCP Tools
 
@@ -325,7 +323,7 @@ ticktick-companion/
 ├── setup.py
 ├── test_server.py
 ├── ticktick_companion/
-│   ├── cli.py              # CLI for auth, dashboard, and MCP
+│   ├── cli.py              # CLI for auth, dashboard, and optional MCP
 │   ├── api/
 │   │   ├── client.py       # TickTick API client
 │   │   └── oauth.py        # OAuth flow and auth command
@@ -336,7 +334,7 @@ ticktick-companion/
 │   │   ├── templates/
 │   │   └── static/
 │   └── mcp/
-│       └── server.py       # MCP server tools
+│       └── server.py       # Optional agent bridge
 └── ticktick_mcp/           # Backward-compatible wrappers
 ```
 

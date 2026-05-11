@@ -31,7 +31,7 @@
               </span>
               {% if p == 'home' %}Home{% elif p == 'triage' %}Recovery{% elif p == 'eod' %}End of Day{% else %}{{ p|capitalize }}{% endif %}
             </span>
-            <span class="badge" data-count="{{ p }}">
+            <span id="badge-{{ p }}" class="badge" data-count="{{ p }}">
               {% if counts.get(p) %}{{ counts[p] }}{% endif %}
             </span>
           </button>
@@ -73,6 +73,8 @@
         <div class="drop-zone target-someday" data-drag-target="someday">Someday</div>
       </div>
 
+      <div id="flash-region" class="flash-region" aria-live="polite"></div>
+
       <main
         id="panel"
         {% if not initial_home_html %}hx-get="{{ url_for('panel', name='home') }}" hx-trigger="load"{% endif %}
@@ -92,7 +94,7 @@
     id="counts"
     hx-get="{{ url_for('counts') }}"
     hx-trigger="load, refreshCounts from:body, every 5m"
-    hx-swap="innerHTML"
+    hx-swap="none"
     style="display:none"
   ></div>
 
@@ -101,28 +103,6 @@
     document.addEventListener('DOMContentLoaded', () => {
       const first = document.querySelector('.tab[data-panel="home"]');
       if (first) first.classList.add('active');
-    });
-
-    // Refresh counts updates the badge spans embedded in tab buttons.
-    document.body.addEventListener('htmx:afterSwap', (e) => {
-      if (e.detail.target.id === 'counts') {
-        const newCounts = e.detail.target.querySelectorAll('[data-tab-count]');
-        newCounts.forEach(span => {
-          const panel = span.dataset.tabCount;
-          const target = document.querySelector(`.badge[data-count="${panel}"]`);
-          if (target) target.textContent = span.textContent.trim();
-        });
-        const meta = e.detail.target.querySelector('[data-refresh-meta]');
-        const refreshMeta = document.querySelector('#refresh-meta');
-        if (meta && refreshMeta) {
-          const error = meta.dataset.refreshError || '';
-          const projectErrorCount = Number(meta.dataset.projectErrorCount || '0');
-          refreshMeta.textContent = meta.textContent.trim();
-          refreshMeta.title = error || (projectErrorCount ? `${projectErrorCount} project refresh issue(s)` : '');
-          refreshMeta.classList.toggle('error', Boolean(error));
-          refreshMeta.classList.toggle('warn', !error && projectErrorCount > 0);
-        }
-      }
     });
 
     document.body.addEventListener('reloadPanel', () => {
@@ -197,16 +177,14 @@
       target.classList.remove('drag-over');
       target.classList.add('is-saving');
 
-      const form = new FormData();
-      form.append('target', targetNameFor(target));
       try {
-        const res = await fetch(`/task/${draggedTask.projectId}/${draggedTask.taskId}/drag`, {
-          method: 'POST',
-          body: form,
+        await htmx.ajax('POST', `/task/${draggedTask.projectId}/${draggedTask.taskId}/drag`, {
+          target: '#flash-region',
+          swap: 'innerHTML',
+          values: {
+            target: targetNameFor(target),
+          },
         });
-        if (!res.ok) throw new Error(await res.text());
-        document.body.dispatchEvent(new Event('refreshCounts'));
-        document.querySelector('.tab.active')?.click();
       } catch (err) {
         console.error(err);
         target.classList.add('drop-error');

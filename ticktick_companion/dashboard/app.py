@@ -39,6 +39,7 @@ from flask import (
     session,
     url_for,
 )
+from markupsafe import escape
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from ..api.oauth import TickTickAuth
@@ -148,15 +149,27 @@ BUCKET_ORDER = {
     "someday": 8,
 }
 
-HIGHLIGHT_PREFIX = "⭐ "
 WAITING_PREFIX = "WAITING:"
 CLAUDE_PREFIX = "🚩 "
 TODAY_NON_WAITING_CAPACITY = 4
 PANEL_PAGE_SIZE = 25
+DEFAULT_SLOT_MINUTES = 30
+DEFAULT_SCHEDULE_START_HOUR = 9
+DEFAULT_SCHEDULE_END_HOUR = 17
 
 DEFAULT_TZ = os.getenv("TICKTICK_TIMEZONE", "America/Los_Angeles")
 DEFAULT_SNAPSHOT_PATH = DEFAULT_DB_PATH.with_suffix(".cache.json")
 ASSET_VERSION = "20260507-sunsama"
+SNAPSHOT_SOURCE = "ticktick-live"
+MOCK_SEED_TASK_ID_PREFIXES = (
+    "t-overdue-",
+    "t-today-",
+    "t-tomorrow-",
+    "t-week-",
+    "t-inbox-",
+    "t-someday-",
+    "t-bg-",
+)
 
 
 def ticktick_task_url(project_id: Optional[str], task_id: Optional[str],
@@ -359,6 +372,11 @@ class TickTickStore:
             fetched_at = parse_iso_dt(payload.get("fetched_at"))
             if not isinstance(projects, list) or not isinstance(tasks_by_project, dict):
                 raise ValueError("invalid snapshot shape")
+            if payload.get("source") and payload.get("source") != SNAPSHOT_SOURCE:
+                raise ValueError(f"unexpected snapshot source {payload['source']!r}")
+            if self._has_mock_seed_tasks(tasks_by_project):
+                self._delete_snapshot("mock seed data")
+                return
         except (OSError, ValueError, json.JSONDecodeError) as e:
             logger.warning("Ignoring dashboard snapshot %s: %s", self._snapshot_path, e)
             return
@@ -372,11 +390,33 @@ class TickTickStore:
         self._revision += 1
         logger.info("Loaded stale dashboard snapshot from %s", self._snapshot_path)
 
+    def _delete_snapshot(self, reason: str) -> None:
+        if not self._snapshot_path:
+            return
+        try:
+            self._snapshot_path.unlink(missing_ok=True)
+            logger.warning("Deleted dashboard snapshot %s: %s", self._snapshot_path, reason)
+        except OSError as e:
+            logger.warning("Could not delete dashboard snapshot %s: %s", self._snapshot_path, e)
+
+    def _has_mock_seed_tasks(self, tasks_by_project: Dict[str, Any]) -> bool:
+        for tasks in tasks_by_project.values():
+            if not isinstance(tasks, list):
+                continue
+            for task in tasks:
+                if not isinstance(task, dict):
+                    continue
+                task_id = str(task.get("id") or "")
+                if task_id.startswith(MOCK_SEED_TASK_ID_PREFIXES):
+                    return True
+        return False
+
     def _save_snapshot_locked(self) -> None:
         if not self._snapshot_path or self._projects is None:
             return
         payload = {
             "version": 1,
+            "source": SNAPSHOT_SOURCE,
             "fetched_at": self._fetched_at.isoformat() if self._fetched_at else "",
             "projects": self._projects,
             "tasks_by_project": self._tasks_by_project,
@@ -570,12 +610,20 @@ def workday_morning(d: date_cls) -> datetime:
     return datetime(d.year, d.month, d.day, 9, 0, 0, tzinfo=user_tz())
 
 
+def schedule_window(d: date_cls) -> Tuple[datetime, datetime]:
+    tz = user_tz()
+    start = datetime(d.year, d.month, d.day, DEFAULT_SCHEDULE_START_HOUR, 0, 0, tzinfo=tz)
+    end = datetime(d.year, d.month, d.day, DEFAULT_SCHEDULE_END_HOUR, 0, 0, tzinfo=tz)
+    return start, end
+
+
+def same_local_time_on(d: date_cls, dt: datetime) -> datetime:
+    local = dt.astimezone(user_tz())
+    return local.replace(year=d.year, month=d.month, day=d.day)
+
+
 def is_waiting(task: Dict) -> bool:
     return (task.get("title") or "").startswith(WAITING_PREFIX)
-
-
-def is_highlight(task: Dict) -> bool:
-    return task.get("priority") == 5 and task.get("status") != 2
 
 
 # ---------------------------------------------------------------------------
@@ -629,7 +677,7 @@ def score_task_for_triage(
     if priority in priority_weights:
         score += priority_weights[priority]
         if priority == 5:
-            reasons.append("current Highlight")
+            reasons.append("high priority")
         elif priority == 3:
             reasons.append("marked as next action")
         elif priority == 1:
@@ -744,7 +792,6 @@ def task_view(task: Dict, projects: Dict[str, Dict],
         "days_overdue": days_overdue(task),
         "is_overdue": is_overdue(task),
         "is_today": is_due_today(task),
-        "is_highlight": is_highlight(task),
         "is_waiting": is_waiting(task),
         "is_inbox": pid == INBOX_PROJECT_ID,
         "bucket": bucket,
@@ -770,11 +817,10 @@ def sort_for_triage(tasks: List[Dict]) -> List[Dict]:
 
 
 def sort_for_today(tasks: List[Dict]) -> List[Dict]:
-    # Highlight first, then by priority desc, then by due time
+    # Priority desc, then by due time.
     def key(t: Dict) -> Tuple:
         due = task_due(t)
         return (
-            0 if is_highlight(t) else 1,
             -(t.get("priority") or 0),
             due or datetime.max.replace(tzinfo=timezone.utc),
         )
@@ -822,7 +868,6 @@ def sort_for_focus(tasks: List[Dict]) -> List[Dict]:
         tasks,
         key=lambda t: (
             BUCKET_ORDER.get(task_bucket(t), 99),
-            0 if is_highlight(t) else 1,
             -(t.get("priority") or 0),
             task_due(t) or datetime.max.replace(tzinfo=timezone.utc),
             (t.get("title") or "").lower(),
@@ -895,18 +940,103 @@ def reschedule_to_date(client, store: TickTickStore, task: Dict, target: date_cl
                       keep_time: bool = False) -> Dict:
     pid = task["projectId"]
     tid = task["id"]
-    if keep_time and task.get("dueDate"):
-        existing = parse_iso_dt(task["dueDate"])
-        if existing:
-            local = existing.astimezone(user_tz())
-            new_dt = local.replace(year=target.year, month=target.month, day=target.day)
+    start_dt: datetime
+    due_dt: datetime
+    if keep_time and (task.get("startDate") or task.get("dueDate")):
+        existing_start = task_start(task)
+        existing_due = task_due(task)
+        if existing_start and existing_due:
+            start_dt = same_local_time_on(target, existing_start)
+            due_dt = same_local_time_on(target, existing_due)
+        elif existing_due:
+            due_dt = same_local_time_on(target, existing_due)
+            start_dt = due_dt - timedelta(minutes=DEFAULT_SLOT_MINUTES)
+        elif existing_start:
+            start_dt = same_local_time_on(target, existing_start)
+            due_dt = start_dt + timedelta(minutes=DEFAULT_SLOT_MINUTES)
         else:
-            new_dt = workday_morning(target)
+            start_dt = workday_morning(target)
+            due_dt = start_dt
     else:
-        new_dt = workday_morning(target)
-    iso = to_api_iso(new_dt)
-    res = client.update_task(task_id=tid, project_id=pid, start_date=iso, due_date=iso)
+        due_dt = workday_morning(target)
+        start_dt = due_dt
+    res = client.update_task(
+        task_id=tid,
+        project_id=pid,
+        start_date=to_api_iso(start_dt),
+        due_date=to_api_iso(due_dt),
+    )
     return require_api_success(res, "reschedule")
+
+
+def task_interval_on_date(task: Dict, target: date_cls) -> Optional[Tuple[datetime, datetime]]:
+    if task.get("isAllDay"):
+        return None
+    start = task_start(task)
+    due = task_due(task)
+    if not start and not due:
+        return None
+    if due and not start:
+        start = due - timedelta(minutes=DEFAULT_SLOT_MINUTES)
+    if start and not due:
+        due = start + timedelta(minutes=DEFAULT_SLOT_MINUTES)
+    if not start or not due:
+        return None
+    start_local = start.astimezone(user_tz())
+    due_local = due.astimezone(user_tz())
+    if start_local.date() != target and due_local.date() != target:
+        return None
+    if due_local <= start_local:
+        due_local = start_local + timedelta(minutes=DEFAULT_SLOT_MINUTES)
+    return start_local, due_local
+
+
+def next_available_slot(
+    tasks: List[Dict],
+    target: date_cls,
+    *,
+    exclude_task_id: Optional[str] = None,
+    minutes: int = DEFAULT_SLOT_MINUTES,
+) -> Tuple[datetime, datetime]:
+    duration = timedelta(minutes=minutes)
+    window_start, window_end = schedule_window(target)
+    intervals = [
+        interval for task in tasks
+        if task.get("id") != exclude_task_id
+        for interval in [task_interval_on_date(task, target)]
+        if interval is not None
+    ]
+    intervals.sort(key=lambda interval: interval[0])
+
+    cursor = window_start
+    latest_end = window_start
+    for busy_start, busy_end in intervals:
+        latest_end = max(latest_end, busy_end)
+        if busy_end <= cursor:
+            continue
+        if cursor + duration <= busy_start:
+            return cursor, cursor + duration
+        cursor = max(cursor, busy_end)
+
+    if cursor + duration <= window_end:
+        return cursor, cursor + duration
+    start = max(cursor, latest_end, window_end)
+    return start, start + duration
+
+
+def schedule_task_in_slot(
+    client,
+    task: Dict,
+    slot_start: datetime,
+    slot_end: datetime,
+) -> Dict:
+    res = client.update_task(
+        task_id=task["id"],
+        project_id=task["projectId"],
+        start_date=to_api_iso(slot_start),
+        due_date=to_api_iso(slot_end),
+    )
+    return require_api_success(res, "schedule next slot")
 
 
 def move_to_someday(client, store: TickTickStore, task: Dict) -> Dict:
@@ -919,8 +1049,6 @@ def move_to_someday(client, store: TickTickStore, task: Dict) -> Dict:
 
 def mark_waiting(client, store: TickTickStore, task: Dict) -> Dict:
     title = task.get("title") or ""
-    if title.startswith(HIGHLIGHT_PREFIX):
-        title = title[len(HIGHLIGHT_PREFIX):]
     if title.startswith(CLAUDE_PREFIX):
         title = title[len(CLAUDE_PREFIX):]
     if not title.startswith(WAITING_PREFIX):
@@ -937,42 +1065,12 @@ def mark_waiting(client, store: TickTickStore, task: Dict) -> Dict:
 def set_priority(client, store: TickTickStore, task: Dict, new_priority: int) -> Dict:
     if new_priority not in PRIORITY_NAMES:
         raise ActionError(f"invalid priority {new_priority}")
-    title = task.get("title") or ""
-    if new_priority == 5 and not title.startswith(HIGHLIGHT_PREFIX):
-        title = HIGHLIGHT_PREFIX + title
-    elif new_priority != 5 and title.startswith(HIGHLIGHT_PREFIX):
-        title = title[len(HIGHLIGHT_PREFIX):]
     res = client.update_task(
         task_id=task["id"],
         project_id=task["projectId"],
         priority=new_priority,
-        title=title if title != task.get("title") else None,
     )
     return require_api_success(res, "set priority")
-
-
-def find_existing_highlight(store: TickTickStore, exclude_id: str) -> Optional[Dict]:
-    for t in store.all_active_tasks():
-        if t.get("id") == exclude_id:
-            continue
-        if is_highlight(t):
-            return t
-    return None
-
-
-def promote_to_highlight(client, store: TickTickStore, task: Dict, force: bool = False) -> Tuple[Optional[Dict], Optional[Dict]]:
-    """Set Highlight, demoting any existing one. Returns (existing, new) tuple.
-
-    If force=False and another Highlight exists, returns (existing, None) so
-    the UI can ask for confirmation before demoting.
-    """
-    existing = find_existing_highlight(store, exclude_id=task["id"])
-    if existing and not force:
-        return existing, None
-    if existing:
-        set_priority(client, store, existing, 3)
-    set_priority(client, store, task, 5)
-    return existing, task
 
 
 def assign_inbox_task(client, store: TickTickStore, task: Dict, project_id: str,
@@ -999,7 +1097,6 @@ def assign_inbox_task(client, store: TickTickStore, task: Dict, project_id: str,
 # ---------------------------------------------------------------------------
 
 def dashboard_health(tasks: List[Dict], event_log: Optional[EventLog] = None) -> List[Dict]:
-    highlights = [t for t in tasks if is_highlight(t)]
     overdue_stale = [t for t in tasks if days_overdue(t) >= 3]
     today_non_waiting = [t for t in tasks if is_due_today(t) and not is_waiting(t)]
     inbox_items = [t for t in tasks if t.get("projectId") == INBOX_PROJECT_ID]
@@ -1010,24 +1107,6 @@ def dashboard_health(tasks: List[Dict], event_log: Optional[EventLog] = None) ->
     ]
 
     warnings: List[Dict] = []
-    if len(highlights) > 1:
-        warnings.append({
-            "kind": "highlight_conflict",
-            "label": "Highlight conflict",
-            "summary": f"{len(highlights)} tasks are marked High.",
-            "panel": "today",
-            "panel_label": "Today",
-            "severity": "danger",
-        })
-    elif not highlights:
-        warnings.append({
-            "kind": "missing_highlight",
-            "label": "No Highlight",
-            "summary": "Pick the one task that makes today a win.",
-            "panel": "today",
-            "panel_label": "Today",
-            "severity": "warn",
-        })
     if overdue_stale:
         warnings.append({
             "kind": "stale_overdue",
@@ -1080,38 +1159,14 @@ def today_capacity(tasks: List[Dict], projects: Dict[str, Dict],
                    event_log: Optional[EventLog] = None) -> Dict:
     today_items = sort_for_today([t for t in tasks if is_due_today(t)])
     non_waiting = [t for t in today_items if not is_waiting(t)]
-    highlight = next((t for t in non_waiting if is_highlight(t)), None)
-    others = [t for t in non_waiting if t is not highlight]
-    big_things = others[:2]
-    tail = others[2:]
+    visible = non_waiting[:TODAY_NON_WAITING_CAPACITY]
+    overflow = non_waiting[TODAY_NON_WAITING_CAPACITY:]
     return {
         "count": len(non_waiting),
         "capacity": TODAY_NON_WAITING_CAPACITY,
         "is_over_capacity": len(non_waiting) >= TODAY_NON_WAITING_CAPACITY,
-        "highlight": task_view(highlight, projects, event_log) if highlight else None,
-        "big_things": [task_view(t, projects, event_log) for t in big_things],
-        "tail": [task_view(t, projects, event_log) for t in tail],
-        "tail_count": len(tail),
-    }
-
-
-def today_commitment(
-    tasks: List[Dict],
-    projects: Dict[str, Dict],
-    event_log: Optional[EventLog] = None,
-) -> Dict:
-    items = sort_for_today([t for t in tasks if is_due_today(t)])
-    highlight = next((t for t in items if is_highlight(t)), None)
-    others = [t for t in items if t is not highlight and not is_waiting(t)]
-    waiting_today = [t for t in items if t is not highlight and is_waiting(t)]
-    big_things = others[:2]
-    tail = others[2:] + waiting_today
-    return {
-        "highlight": task_view(highlight, projects, event_log) if highlight else None,
-        "big_things": [task_view(t, projects, event_log) for t in big_things],
-        "tail_count": len(tail),
-        "today_count": len(items),
-        "waiting_count": len(waiting_today),
+        "visible": [task_view(t, projects, event_log) for t in visible],
+        "overflow_count": len(overflow),
     }
 
 
@@ -1131,7 +1186,6 @@ def today_timebox_plan(
     ]
     timed.sort(key=lambda t: (
         task_start(t) or task_due(t) or datetime.max.replace(tzinfo=timezone.utc),
-        0 if is_highlight(t) else 1,
         -(t.get("priority") or 0),
     ))
 
@@ -1156,59 +1210,6 @@ def today_timebox_plan(
         "untimed_count": len(untimed),
         "timed_count": len(rows),
     }
-
-
-def planning_rituals(
-    tasks: List[Dict],
-    attention: List[Dict],
-    event_log: Optional[EventLog] = None,
-) -> List[Dict]:
-    today_items = [t for t in tasks if is_due_today(t)]
-    today_non_waiting = [t for t in today_items if not is_waiting(t)]
-    timed_count = sum(
-        1 for t in today_non_waiting
-        if not t.get("isAllDay") and (task_start(t) or task_due(t))
-    )
-    highlight = next((t for t in today_non_waiting if is_highlight(t)), None)
-    tomorrow_items = [t for t in tasks if is_due_tomorrow(t)]
-    completed_count = 0
-    if event_log is not None:
-        completed_count = len(event_log.completed_on(event_log.today_local_date()))
-
-    return [
-        {
-            "name": "Daily Planning",
-            "status": "done" if highlight and len(today_non_waiting) <= TODAY_NON_WAITING_CAPACITY else "needs",
-            "detail": (
-                "Highlight set"
-                if highlight and len(today_non_waiting) <= TODAY_NON_WAITING_CAPACITY
-                else f"{len(attention)} signal{'s' if len(attention) != 1 else ''}"
-            ),
-            "panel": "today",
-            "panel_label": "Plan",
-        },
-        {
-            "name": "Timebox",
-            "status": "done" if timed_count >= len(today_non_waiting) and today_non_waiting else "ready",
-            "detail": f"{timed_count}/{len(today_non_waiting)} planned",
-            "panel": "today",
-            "panel_label": "Schedule",
-        },
-        {
-            "name": "Highlight",
-            "status": "ready" if highlight else "needs",
-            "detail": (highlight.get("title") or "Highlight") if highlight else "Pick Highlight",
-            "panel": "today",
-            "panel_label": "Today",
-        },
-        {
-            "name": "Shutdown",
-            "status": "done" if completed_count and tomorrow_items else "ready",
-            "detail": f"{completed_count} done · {len(tomorrow_items)} tomorrow",
-            "panel": "eod",
-            "panel_label": "Close",
-        },
-    ]
 
 
 def _recommendation(
@@ -1243,36 +1244,8 @@ def recommended_actions(
     event_log: Optional[EventLog] = None,
 ) -> List[Dict]:
     recs: List[Dict] = []
-    highlights = [t for t in tasks if is_highlight(t)]
     today_items = [t for t in tasks if is_due_today(t)]
     today_non_waiting = [t for t in today_items if not is_waiting(t)]
-    tomorrow_items = [t for t in tasks if is_due_tomorrow(t)]
-
-    if len(highlights) > 1:
-        recs.append(_recommendation(
-            "highlight_conflict",
-            "Resolve the Highlight conflict",
-            "More than one task is marked High. Pick the single real Highlight.",
-            "today",
-            "Today",
-        ))
-    elif not highlights:
-        candidate = (sort_for_today(today_non_waiting) or sort_for_focus([
-            t for t in tasks
-            if t.get("projectId") != SOMEDAY_PROJECT_ID and not is_waiting(t)
-        ]))
-        task = candidate[0] if candidate else None
-        recs.append(_recommendation(
-            "missing_highlight",
-            "Pick today's Highlight",
-            "Choose the one task that would make today feel like a win.",
-            "today",
-            "Today",
-            task=task,
-            projects=projects,
-            event_log=event_log,
-            primary_action={"label": "Set Highlight", "action": "highlight"} if task else None,
-        ))
 
     for task in sort_for_recovery([t for t in tasks if is_overdue(t)], projects, event_log)[:2]:
         decision = recommended_triage_decision(task, projects, event_log)
@@ -1296,7 +1269,7 @@ def recommended_actions(
         recs.append(_recommendation(
             "today_overload",
             "Reduce today's commitment",
-            f"{len(today_non_waiting)} non-waiting tasks are scheduled today. Keep the Highlight plus two Big Things.",
+            f"{len(today_non_waiting)} non-waiting tasks are scheduled today. Keep Today to the work you can actually finish.",
             "today",
             "Today",
         ))
@@ -1327,20 +1300,6 @@ def recommended_actions(
             projects=projects,
             event_log=event_log,
             primary_action={"label": "Move to Today", "action": "today"},
-        ))
-
-    near_eod = datetime.now(user_tz()).hour >= 15
-    if near_eod and tomorrow_items and not any(is_highlight(t) for t in tomorrow_items):
-        recs.append(_recommendation(
-            "tomorrow_highlight",
-            "Pick tomorrow's Highlight",
-            "Tomorrow has tasks lined up, but no Highlight yet.",
-            "eod",
-            "End of Day",
-            task=sort_for_today(tomorrow_items)[0],
-            projects=projects,
-            event_log=event_log,
-            primary_action={"label": "Set Highlight", "action": "highlight"},
         ))
 
     return recs[:5]
@@ -1390,7 +1349,6 @@ def weekly_review_data(
         if count >= 3
     ][:4]
 
-    highlights = [t for t in tasks if is_highlight(t)]
     return {
         "oldest_overdue": [
             task_view(t, projects, event_log)
@@ -1408,10 +1366,6 @@ def weekly_review_data(
             task_view(t, projects, event_log)
             for t in someday_candidates
         ],
-        "highlight_conflicts": [
-            task_view(t, projects, event_log)
-            for t in highlights
-        ] if len(highlights) > 1 else [],
         "overloaded_families": overloaded_families,
     }
 
@@ -1495,13 +1449,16 @@ def home_data(store: TickTickStore, event_log: Optional[EventLog] = None) -> Dic
         completed_today = event_log.completed_on(today_str)
 
     attention = dashboard_health(tasks, event_log)
+    today_items = [t for t in tasks if is_due_today(t)]
     return {
         "title": "Home",
         "subtitle": "Choose the next honest move.",
-        "rituals": planning_rituals(tasks, attention, event_log),
         "attention": attention,
         "attention_count": len(attention),
-        "commitment": today_commitment(tasks, projects, event_log),
+        "today": {
+            "tasks": [task_view(t, projects, event_log) for t in sort_for_today(today_items)[:5]],
+            "count": len(today_items),
+        },
         "recommendations": recommended_actions(tasks, projects, event_log),
         "project_pressure": project_pressure_data(tasks, projects),
         "weekly_review": weekly_review_data(tasks, projects, event_log),
@@ -1523,7 +1480,6 @@ def compute_counts(store: TickTickStore) -> Dict[str, int]:
         "inbox": sum(1 for t in tasks if t.get("projectId") == INBOX_PROJECT_ID),
         "waiting": sum(1 for t in tasks if is_waiting(t)),
         "someday": sum(1 for t in tasks if t.get("projectId") == SOMEDAY_PROJECT_ID),
-        "highlight_conflicts": sum(1 for t in tasks if is_highlight(t)),
     }
 
 
@@ -1562,18 +1518,10 @@ def panel_data(
     if name == "today":
         items = [t for t in tasks if is_due_today(t)]
         items = sort_for_today(items)
-        highlight = next((t for t in items if is_highlight(t)), None)
-        # The Highlight gets its own section above; pull it out of the rest
-        # so it doesn't render twice.
-        non_highlight = [t for t in items if t is not highlight]
-        big_three = non_highlight[:3]
-        tail = non_highlight[3:]
         return {
             "title": "Today",
-            "subtitle": "Highlight + Three Big Things, then the tail.",
-            "highlight": task_view(highlight, projects, event_log) if highlight else None,
-            "big_three": [task_view(t, projects, event_log) for t in big_three],
-            "tail": [task_view(t, projects, event_log) for t in tail],
+            "subtitle": "Everything scheduled for today, ordered by priority and time.",
+            "tasks": [task_view(t, projects, event_log) for t in items],
             "timebox_plan": today_timebox_plan(items, projects, event_log),
         }
     if name == "tomorrow":
@@ -1629,11 +1577,8 @@ def panel_data(
             "title": "End of day",
             "subtitle": "Close out today, set up tomorrow.",
             "unfinished": [task_view(t, projects, event_log) for t in unfinished_today],
+            "rollover_count": len(unfinished_today),
             "tomorrow": [task_view(t, projects, event_log) for t in sort_for_today(tomorrow_items)],
-            "highlight_for_tomorrow": next(
-                (task_view(t, projects, event_log) for t in tomorrow_items if is_highlight(t)),
-                None,
-            ),
             "completed_today": completed_today,
             "activity_stats": activity_stats,
         }
@@ -1744,17 +1689,40 @@ def create_app(
         text = str(error).lower()
         return "401" in text or "unauthorized" in text or "invalid_grant" in text
 
+    def is_hosted_token_store_missing() -> bool:
+        return (
+            os.getenv("VERCEL") == "1"
+            and not (
+                os.getenv("UPSTASH_REDIS_REST_URL")
+                and os.getenv("UPSTASH_REDIS_REST_TOKEN")
+            )
+        )
+
     def render_ticktick_setup(message: Optional[str] = None, status: int = 200):
         has_client_credentials = bool(app.config["TICKTICK_CLIENT_ID"] and app.config["TICKTICK_CLIENT_SECRET"])
+        missing_hosted_store = is_hosted_token_store_missing()
+        setup_message = message
+        if missing_hosted_store and has_client_credentials and not setup_message:
+            setup_message = (
+                "This Vercel deployment needs Upstash Redis token storage before "
+                "hosted TickTick OAuth can save credentials."
+            )
         redirect_uri = os.getenv("TICKTICK_REDIRECT_URI") or url_for("ticktick_oauth_callback", _external=True)
         response = make_response(render_template(
             "auth_setup.html",
-            message=message,
+            message=setup_message,
             has_client_credentials=has_client_credentials,
+            can_authorize=has_client_credentials and not missing_hosted_store,
+            missing_hosted_store=missing_hosted_store,
             redirect_uri=redirect_uri,
             logged_in=is_logged_in(),
         ), status)
         return response
+
+    def ticktick_setup_or_redirect(message: Optional[str] = None, status: int = 401):
+        if request.headers.get("HX-Request"):
+            return htmx_redirect(url_for("index"), status=status)
+        return render_ticktick_setup(message, status=status)
 
     def rebuild_ticktick_client() -> bool:
         try:
@@ -1802,17 +1770,23 @@ def create_app(
         status: int = 200,
         retarget: Optional[str] = None,
         reswap: Optional[str] = None,
+        refresh_counts: bool = True,
     ):
         resp = Response(html, status=status, mimetype="text/html; charset=utf-8")
-        triggers = ["refreshCounts"]
+        triggers = ["refreshCounts"] if refresh_counts else []
         if trigger:
             triggers.append(trigger)
-        resp.headers["HX-Trigger"] = ",".join(triggers)
+        if triggers:
+            resp.headers["HX-Trigger"] = ",".join(triggers)
         if retarget:
             resp.headers["HX-Retarget"] = retarget
         if reswap:
             resp.headers["HX-Reswap"] = reswap
         return resp
+
+    def flash_error_response(message: str):
+        html = f'<div class="flash error" role="alert">{escape(message)}</div>'
+        return htmx_response(html, retarget="#flash-region", reswap="innerHTML", refresh_counts=False)
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
@@ -1839,6 +1813,11 @@ def create_app(
     def ticktick_oauth_start():
         if not app.config["TICKTICK_CLIENT_ID"] or not app.config["TICKTICK_CLIENT_SECRET"]:
             return render_ticktick_setup("TickTick client credentials are missing.", status=400)
+        if is_hosted_token_store_missing():
+            return render_ticktick_setup(
+                "Add UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN in Vercel before authorizing TickTick.",
+                status=400,
+            )
         redirect_uri = os.getenv("TICKTICK_REDIRECT_URI") or url_for("ticktick_oauth_callback", _external=True)
         state = secrets.token_urlsafe(32)
         session["ticktick_oauth_state"] = state
@@ -1905,7 +1884,7 @@ def create_app(
         if name not in PANELS:
             abort(404)
         if not ticktick_ready():
-            return render_ticktick_setup(status=401)
+            return ticktick_setup_or_redirect()
         started = time.perf_counter()
         log: EventLog = app.config["EVENT_LOG"]
         cache_key = (name, store.revision, log.revision)
@@ -1925,7 +1904,7 @@ def create_app(
             data_seconds = time.perf_counter() - data_started
         except RuntimeError as e:
             if is_ticktick_auth_error(e):
-                return render_ticktick_setup("TickTick authorization expired. Reconnect TickTick to continue.", status=401)
+                return ticktick_setup_or_redirect("TickTick authorization expired. Reconnect TickTick to continue.")
             return render_template("_error.html", message=str(e)), 502
         render_started = time.perf_counter()
         html = render_template(f"_panel_{name}.html", **data, panel=name)
@@ -1947,7 +1926,7 @@ def create_app(
         if name not in {"triage", "someday"}:
             abort(404)
         if not ticktick_ready():
-            return render_ticktick_setup(status=401)
+            return ticktick_setup_or_redirect()
         try:
             offset = int(request.args.get("offset", "0"))
         except ValueError:
@@ -1979,10 +1958,43 @@ def create_app(
             cache_state="stale" if store.is_stale_snapshot else "fresh",
         )
 
+    @app.route("/tasks/rollover-today", methods=["POST"])
+    def rollover_today():
+        if not ticktick_ready():
+            return ticktick_setup_or_redirect()
+        client = app.config["CLIENT"]
+        log: EventLog = app.config["EVENT_LOG"]
+        projects = project_lookup(store)
+        target = today_local() + timedelta(days=1)
+        tasks = sort_for_today([t for t in store.all_active_tasks() if is_due_today(t)])
+        touched = set()
+        try:
+            for task in tasks:
+                proj_name = (projects.get(task.get("projectId") or "") or {}).get("name")
+                due_before = task.get("dueDate")
+                updated = reschedule_to_date(client, store, task, target, keep_time=True)
+                due_after = updated.get("dueDate") or task.get("dueDate")
+                log.record(
+                    "reschedule", task, project_name=proj_name,
+                    due_before=due_before,
+                    due_after=due_after,
+                    details={"kind": "rollover_today", "target_date": target.isoformat()},
+                )
+                touched.add(task["projectId"])
+        except ActionError as e:
+            if touched:
+                store.refresh_projects(list(touched))
+                clear_panel_cache()
+            return htmx_response(f'<div class="inline-error">{e}</div>', status=400)
+        if touched:
+            store.refresh_projects(list(touched))
+            clear_panel_cache()
+        return htmx_response("", trigger="reloadPanel")
+
     @app.route("/task/<project_id>/<task_id>/action", methods=["POST"])
     def task_action(project_id: str, task_id: str):
         if not ticktick_ready():
-            return render_ticktick_setup(status=401)
+            return ticktick_setup_or_redirect()
         action = request.form.get("action") or ""
         task = get_task_or_404(project_id, task_id)
         try:
@@ -1995,19 +2007,43 @@ def create_app(
         log: EventLog = app.config["EVENT_LOG"]
         projects = project_lookup(store)
         proj_name = (projects.get(task.get("projectId") or "") or {}).get("name")
+        reload_trigger = "reloadPanel" if form.get("source_panel") == "home" or form.get("force_capacity") == "1" else None
 
         if action == "complete":
             require_api_success(client.complete_task(task["projectId"], task["id"]), "complete")
             log.record("complete", task, project_name=proj_name)
             store.refresh_project(task["projectId"])
             clear_panel_cache()
-            return resp("")
+            return resp("", trigger=reload_trigger)
         if action == "delete":
             require_api_success(client.delete_task(task["projectId"], task["id"]), "delete")
             log.record("delete", task, project_name=proj_name)
             store.refresh_project(task["projectId"])
             clear_panel_cache()
-            return resp("")
+            return resp("", trigger=reload_trigger)
+        if action == "next_slot":
+            target = today_local() + timedelta(days=1)
+            slot_start, slot_end = next_available_slot(
+                store.all_active_tasks(),
+                target,
+                exclude_task_id=task.get("id"),
+            )
+            due_before = task.get("dueDate")
+            schedule_task_in_slot(client, task, slot_start, slot_end)
+            log.record(
+                "reschedule", task, project_name=proj_name,
+                due_before=due_before,
+                due_after=to_api_iso(slot_end),
+                details={
+                    "kind": "next_slot",
+                    "target_date": target.isoformat(),
+                    "slot_start": to_api_iso(slot_start),
+                    "slot_end": to_api_iso(slot_end),
+                },
+            )
+            store.refresh_project(task["projectId"])
+            clear_panel_cache()
+            return resp("", trigger=reload_trigger)
         if action in ("today", "tomorrow", "plus_days", "specific_date"):
             if action == "today":
                 target = today_local()
@@ -2043,7 +2079,7 @@ def create_app(
             )
             store.refresh_project(task["projectId"])
             clear_panel_cache()
-            return resp("")
+            return resp("", trigger=reload_trigger)
         if action == "someday":
             due_before = task.get("dueDate")
             move_to_someday(client, store, task)
@@ -2054,7 +2090,7 @@ def create_app(
             )
             store.refresh_projects([task["projectId"], SOMEDAY_PROJECT_ID])
             clear_panel_cache()
-            return resp("")
+            return resp("", trigger=reload_trigger)
         if action == "waiting":
             mark_waiting(client, store, task)
             log.record(
@@ -2063,7 +2099,7 @@ def create_app(
             )
             store.refresh_projects([task["projectId"], WAITING_HOME_PROJECT_ID])
             clear_panel_cache()
-            return resp("")
+            return resp("", trigger=reload_trigger)
         if action == "set_priority":
             try:
                 p = int(form.get("priority", "0"))
@@ -2077,38 +2113,8 @@ def create_app(
             )
             store.refresh_project(task["projectId"])
             clear_panel_cache()
-            return resp(_render_card(task["projectId"], task["id"], store))
-        if action == "highlight":
-            force = form.get("force") == "1"
-            existing, new = promote_to_highlight(client, store, task, force=force)
-            if existing and new is None:
-                view = task_view(task, projects, log)
-                existing_view = task_view(existing, projects, log)
-                html = render_template(
-                    "_highlight_conflict.html",
-                    task=view, existing=existing_view,
-                )
-                return resp(html, status=200)
-            log.record(
-                "highlight", task, project_name=proj_name,
-                priority_before=task.get("priority"), priority_after=5,
-                details={"demoted_id": existing.get("id") if existing else None,
-                         "demoted_title": existing.get("title") if existing else None},
-            )
-            touched = [task["projectId"]]
-            if existing:
-                touched.append(existing["projectId"])
-            store.refresh_projects(touched)
-            clear_panel_cache()
-            return resp(_render_card(task["projectId"], task["id"], store))
-        if action == "unhighlight":
-            set_priority(client, store, task, 3)
-            log.record(
-                "unhighlight", task, project_name=proj_name,
-                priority_before=5, priority_after=3,
-            )
-            store.refresh_project(task["projectId"])
-            clear_panel_cache()
+            if reload_trigger:
+                return resp("", trigger=reload_trigger)
             return resp(_render_card(task["projectId"], task["id"], store))
         if action == "assign_inbox":
             pid = form.get("project_id") or ""
@@ -2127,7 +2133,7 @@ def create_app(
             )
             store.refresh_projects([task["projectId"], pid])
             clear_panel_cache()
-            return resp("")
+            return resp("", trigger=reload_trigger)
         raise ActionError(f"unknown action: {action}")
 
     def _needs_today_capacity_guard(task: Dict, form) -> bool:
@@ -2142,7 +2148,7 @@ def create_app(
     @app.route("/task/<project_id>/<task_id>/drag", methods=["POST"])
     def task_drag(project_id: str, task_id: str):
         if not ticktick_ready():
-            return jsonify({"ok": False, "error": "TickTick authentication required"}), 401
+            return flash_error_response("TickTick authentication required")
         target = request.form.get("target") or ""
         task = get_task_or_404(project_id, task_id)
         client = app.config["CLIENT"]
@@ -2187,43 +2193,14 @@ def create_app(
             else:
                 raise ActionError(f"unknown drag target: {target}")
         except ActionError as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+            return flash_error_response(str(e))
         store.refresh_projects(touched)
         log.record(
             action, task, project_name=proj_name,
             due_before=due_before, due_after=due_after, details=details,
         )
         clear_panel_cache()
-        return jsonify({"ok": True, "target": target})
-
-    @app.route("/task/<project_id>/<task_id>/diagnose")
-    def diagnose_task(project_id: str, task_id: str):
-        if not ticktick_ready():
-            return render_ticktick_setup(status=401)
-        task = get_task_or_404(project_id, task_id)
-        projects = project_lookup(store)
-        log: EventLog = app.config["EVENT_LOG"]
-        title = (task.get("title") or "(untitled)").removeprefix(HIGHLIGHT_PREFIX).removeprefix(CLAUDE_PREFIX).strip()
-        if is_waiting(task):
-            first_step = "Send a short follow-up or decide the next person who owns the wait."
-            rewrite = title
-        elif len(title.split()) <= 4 or task_view(task, projects, log)["is_stuck"]:
-            first_step = "Define the next physical action that would take 10 minutes or less."
-            rewrite = f"Clarify next step for: {title}"
-        else:
-            first_step = "Spend 10 minutes opening the relevant notes, draft, or thread and make the next edit."
-            rewrite = title
-        suggestions = [
-            first_step,
-            "If this still matters, schedule one concrete next action instead of the whole project.",
-            "If it no longer matters this week, park it in Someday or drop it deliberately.",
-        ]
-        return render_template(
-            "_diagnosis.html",
-            task=task_view(task, projects, log),
-            rewrite=rewrite,
-            suggestions=suggestions,
-        )
+        return htmx_response("", trigger="reloadPanel")
 
     def _render_card(project_id: str, task_id: str, store: TickTickStore,
                      action_error: Optional[str] = None) -> str:
@@ -2241,12 +2218,12 @@ def create_app(
     @app.route("/refresh", methods=["POST"])
     def refresh():
         if not ticktick_ready() and not rebuild_ticktick_client():
-            return render_ticktick_setup("TickTick authentication required.", status=401)
+            return ticktick_setup_or_redirect("TickTick authentication required.")
         try:
             store.refresh_all()
         except RuntimeError as e:
             if is_ticktick_auth_error(e):
-                return render_ticktick_setup("TickTick authorization expired. Reconnect TickTick to continue.", status=401)
+                return ticktick_setup_or_redirect("TickTick authorization expired. Reconnect TickTick to continue.")
             return htmx_response(f'<div class="error">{e}</div>', status=502)
         clear_panel_cache()
         return htmx_response("", trigger="reloadPanel")

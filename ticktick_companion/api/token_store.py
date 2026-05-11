@@ -38,12 +38,15 @@ class EnvFileTokenStore(TokenStore):
         env_content: Dict[str, str] = {}
         if not self.env_path.exists():
             return env_content
-        with open(self.env_path, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    key, value = line.split("=", 1)
-                    env_content[key] = value
+        try:
+            with open(self.env_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, value = line.split("=", 1)
+                        env_content[key] = value
+        except OSError as e:
+            raise TokenStoreError(f"Could not read token env file {self.env_path}: {e}") from e
         return env_content
 
     def load_tokens(self) -> Dict[str, str]:
@@ -69,9 +72,12 @@ class EnvFileTokenStore(TokenStore):
         if client_secret and "TICKTICK_CLIENT_SECRET" not in env_content:
             env_content["TICKTICK_CLIENT_SECRET"] = client_secret
 
-        with open(self.env_path, "w") as f:
-            for key, value in env_content.items():
-                f.write(f"{key}={value}\n")
+        try:
+            with open(self.env_path, "w") as f:
+                for key, value in env_content.items():
+                    f.write(f"{key}={value}\n")
+        except OSError as e:
+            raise TokenStoreError(f"Could not write token env file {self.env_path}: {e}") from e
 
 
 class UpstashRedisTokenStore(TokenStore):

@@ -202,7 +202,7 @@ def _seed_tasks() -> List[Dict]:
         {
             "id": "t-today-1",
             "projectId": "6988fcb958ca9155b99ecc3f",
-            "title": "⭐ Write investor memo draft",
+            "title": "Write investor memo draft",
             "content": "Two-pager on Extensible's wedge.",
             "priority": 5,
             "status": 0,

@@ -1,6 +1,6 @@
 {# Single task card. The actions row is reused across panels. #}
 {% import "_icons.html" as icons %}
-<article class="card priority-{{ task.priority }}{% if task.is_highlight %} highlight{% endif %}{% if task.is_waiting %} waiting{% endif %}"
+<article class="card priority-{{ task.priority }}{% if task.is_waiting %} waiting{% endif %}"
          data-task-id="{{ task.id }}"
          data-project-id="{{ task.project_id }}"
          data-draggable-task="1">
@@ -44,7 +44,6 @@
           <span>{{ task.triage_reasons|join(" · ") }}</span>
         {% endif %}
       </div>
-      <div id="diagnosis-{{ task.id }}"></div>
     {% endif %}
     {% if task.content %}
       <details class="card-content">
@@ -108,6 +107,14 @@
                   hx-target="closest .card"
                   hx-swap="outerHTML">Tomorrow</button>
 
+          <button class="btn plan-secondary"
+                  hx-post="{{ base_url }}"
+                  hx-vals='{"action":"next_slot"}'
+                  hx-include="closest .card"
+                  hx-target="closest .card"
+                  hx-swap="outerHTML"
+                  title="Schedule in the next open 30-minute slot tomorrow">Next Slot</button>
+
           <button class="btn small"
                   hx-post="{{ base_url }}"
                   hx-vals='{"action":"plus_days","days":"3"}'
@@ -143,10 +150,6 @@
 
           {% if panel == 'triage' %}
             <button class="btn"
-                    hx-get="/task/{{ task.project_id }}/{{ task.id }}/diagnose"
-                    hx-target="#diagnosis-{{ task.id }}"
-                    hx-swap="innerHTML">Break Down</button>
-            <button class="btn"
                     hx-post="{{ base_url }}"
                     hx-vals='{"action":"waiting"}'
                     hx-target="closest .card"
@@ -158,10 +161,10 @@
       <div class="action-group priority-actions prio-set">
         <button class="prio-btn prio-5{% if task.priority == 5 %} on{% endif %}"
                 hx-post="{{ base_url }}"
-                hx-vals='{"action":"highlight"}'
-                hx-target="#modal-root"
-                hx-swap="innerHTML"
-                title="Set as today's Highlight (priority High, only one allowed)">{{ icons.icon("star", "icon prio-icon") }}</button>
+                hx-vals='{"action":"set_priority","priority":"5"}'
+                hx-target="closest .card"
+                hx-swap="outerHTML"
+                title="High priority">H</button>
         <button class="prio-btn prio-3{% if task.priority == 3 %} on{% endif %}"
                 hx-post="{{ base_url }}"
                 hx-vals='{"action":"set_priority","priority":"3"}'

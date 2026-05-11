@@ -3,17 +3,14 @@
   <div class="modal capacity-modal">
     <h3>Today is already full</h3>
     <p><strong>{{ task.title }}</strong> would become another Today commitment.</p>
-    <p>{{ capacity.count }} non-waiting tasks are already scheduled today. Keep Today centered on the Highlight, two Big Things, and a small tail.</p>
+    <p>{{ capacity.count }} non-waiting tasks are already scheduled today. Keep Today to the work you can actually finish.</p>
 
     <div class="capacity-list">
-      {% if capacity.highlight %}
-        <div><span>Highlight</span><strong>{{ capacity.highlight.title }}</strong></div>
-      {% endif %}
-      {% for item in capacity.big_things %}
-        <div><span>Big Thing</span><strong>{{ item.title }}</strong></div>
+      {% for item in capacity.visible %}
+        <div><span>Today</span><strong>{{ item.title }}</strong></div>
       {% endfor %}
-      {% if capacity.tail_count %}
-        <div><span>Tail</span><strong>{{ capacity.tail_count }} additional task{% if capacity.tail_count != 1 %}s{% endif %}</strong></div>
+      {% if capacity.overflow_count %}
+        <div><span>Extra</span><strong>{{ capacity.overflow_count }} additional task{% if capacity.overflow_count != 1 %}s{% endif %}</strong></div>
       {% endif %}
     </div>
 
@@ -24,8 +21,7 @@
               hx-post="/task/{{ task.project_id }}/{{ task.id }}/action"
               hx-vals='{"action":"today","force_capacity":"1","reason":"Capacity override"}'
               hx-target="closest .modal-backdrop"
-              hx-swap="outerHTML"
-              hx-on::after-request="document.querySelector('.tab.active')?.click()">
+              hx-swap="outerHTML">
         Move anyway
       </button>
     </div>

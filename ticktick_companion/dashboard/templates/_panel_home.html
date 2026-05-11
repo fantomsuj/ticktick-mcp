@@ -8,64 +8,28 @@
     <div class="counter">{{ attention_count }} attention</div>
   </div>
 
-  <section class="ritual-strip" aria-label="Planning rituals">
-    {% for ritual in rituals %}
-      <button class="ritual-card ritual-{{ ritual.status }}"
-              onclick="document.querySelector('.tab[data-panel={{ ritual.panel }}]')?.click()">
-        <span class="ritual-kicker">{{ loop.index }}</span>
-        <span class="ritual-copy">
-          <strong>{{ ritual.name }}</strong>
-          <span>{{ ritual.detail }}</span>
-        </span>
-        <span class="ritual-action">{{ ritual.panel_label }}</span>
-      </button>
-    {% endfor %}
-  </section>
-
   <div class="command-center">
     <div class="command-main">
-      <section class="home-block commitment-block">
+      <section class="home-block today-block">
         <header class="home-block-head">
-          <h3>Today Commitment</h3>
+          <h3>Today</h3>
           <button class="link" onclick="document.querySelector('.tab[data-panel=today]')?.click()">Open today</button>
         </header>
-        <div class="commitment-layout">
-          <div class="commitment-highlight">
-            <div class="section-label">Highlight</div>
-            {% if commitment.highlight %}
-              <div class="mini-task highlight-mini">
-                <strong>{{ commitment.highlight.title }}</strong>
-                <span>{{ commitment.highlight.project_name }}</span>
+        {% if today.tasks|length == 0 %}
+          <div class="empty compact">Nothing scheduled for today.</div>
+        {% else %}
+          <div class="mini-list">
+            {% for task in today.tasks %}
+              <div class="mini-task">
+                <strong>{{ task.title }}</strong>
+                <span>{{ task.project_name }}{% if task.due_label %} · {{ task.due_label }}{% endif %}</span>
               </div>
-            {% else %}
-              <div class="empty compact">No Highlight set.</div>
-            {% endif %}
+            {% endfor %}
           </div>
-
-          <div>
-            <div class="section-label">Two Big Things</div>
-            {% if commitment.big_things|length == 0 %}
-              <div class="empty compact">No other committed tasks yet.</div>
-            {% else %}
-              <div class="mini-list">
-                {% for task in commitment.big_things %}
-                  <div class="mini-task">
-                    <strong>{{ task.title }}</strong>
-                    <span>{{ task.project_name }}{% if task.due_label %} · {{ task.due_label }}{% endif %}</span>
-                  </div>
-                {% endfor %}
-              </div>
-            {% endif %}
-          </div>
-
-          <div class="commitment-tail">
-            <span class="metric">{{ commitment.tail_count }}</span>
-            <span class="muted small">tail task{% if commitment.tail_count != 1 %}s{% endif %}</span>
-            {% if commitment.waiting_count %}
-              <span class="muted small">{{ commitment.waiting_count }} waiting</span>
-            {% endif %}
-          </div>
-        </div>
+          {% if today.count > today.tasks|length %}
+            <p class="muted small">+{{ today.count - today.tasks|length }} more today</p>
+          {% endif %}
+        {% endif %}
       </section>
 
       <section class="home-block attention-block">
@@ -132,24 +96,17 @@
                     {% set base_url = '/task/' ~ rec.task.project_id ~ '/' ~ rec.task.id ~ '/action' %}
                     <button class="btn primary small"
                             hx-post="{{ base_url }}"
-                            hx-vals='{"action":"{{ rec.primary_action.action }}"}'
-                            {% if rec.primary_action.action == 'highlight' %}
-                              hx-target="#modal-root"
-                              hx-swap="innerHTML"
-                            {% else %}
-                              hx-target="closest .home-recommendation"
-                              hx-swap="outerHTML"
-                            {% endif %}
-                            hx-on::after-request="document.body.dispatchEvent(new Event('refreshCounts')); document.querySelector('.tab.active')?.click()">
+                            hx-vals='{"action":"{{ rec.primary_action.action }}","source_panel":"home"}'
+                            hx-target="closest .home-recommendation"
+                            hx-swap="outerHTML">
                       {{ rec.primary_action.label }}
                     </button>
                     {% for action in rec.secondary_actions %}
                       <button class="btn small"
                               hx-post="{{ base_url }}"
-                              hx-vals='{"action":"{{ action.action }}"}'
+                              hx-vals='{"action":"{{ action.action }}","source_panel":"home"}'
                               hx-target="closest .home-recommendation"
-                              hx-swap="outerHTML"
-                              hx-on::after-request="document.body.dispatchEvent(new Event('refreshCounts')); document.querySelector('.tab.active')?.click()">
+                              hx-swap="outerHTML">
                         {{ action.label }}
                       </button>
                     {% endfor %}

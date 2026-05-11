@@ -1,9 +1,10 @@
 # Agent Instructions
 
-These instructions support TickTick Companion. The local dashboard is the main
-daily planning surface; Claude/MCP usage should follow the same scheduling,
-Highlight, Inbox, Waiting, and End of Day rules so changes stay consistent
-between the dashboard and conversational workflows.
+These instructions support TickTick Companion as a focused TickTick triage app.
+The local dashboard is the main daily planning surface. Claude/MCP usage is an
+agent bridge for helping build, debug, and maintain the app; when it changes
+TickTick data, it should follow the same scheduling, Inbox, Waiting, and End of
+Day rules so agent actions stay consistent with the dashboard.
 
 ## Task Scheduling
 
