@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
     name="ticktick-companion",
     version="0.1.0",
-    description="Companion CLI, MCP server, and dashboard for TickTick task management",
+    description="Focused TickTick triage dashboard with an optional MCP agent bridge",
     author="Jaesung Park",
     author_email="parkjs814@gmail.com",
     url="https://github.com/parkjs814/ticktick-mcp",

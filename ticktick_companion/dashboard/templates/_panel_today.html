@@ -1,4 +1,3 @@
-{% import "_icons.html" as icons %}
 <section class="panel">
   <div class="panel-head">
     <div>
@@ -10,40 +9,17 @@
   <div class="today-layout">
     <div class="today-grid">
       <div class="today-section">
-        <h3 class="section-label with-icon">{{ icons.icon("star", "icon section-icon") }} Highlight</h3>
-        {% if highlight %}
-          {% set task = highlight %}
-          {% include "_card.html" %}
-        {% else %}
-          <div class="empty">
-            No Highlight set. Click the star on the task that would make today feel like a win.
-          </div>
-        {% endif %}
-      </div>
-
-      <div class="today-section">
-        <h3 class="section-label">Three Big Things</h3>
-        {% if big_three|length == 0 %}
+        <h3 class="section-label">Today tasks</h3>
+        {% if tasks|length == 0 %}
           <div class="empty">Nothing scheduled for today.</div>
         {% else %}
           <div class="card-list">
-            {% for task in big_three %}
+            {% for task in tasks %}
               {% include "_card.html" %}
             {% endfor %}
           </div>
         {% endif %}
       </div>
-
-      {% if tail|length > 0 %}
-        <div class="today-section">
-          <h3 class="section-label">Tail ({{ tail|length }})</h3>
-          <div class="card-list compact">
-            {% for task in tail %}
-              {% include "_card.html" %}
-            {% endfor %}
-          </div>
-        </div>
-      {% endif %}
     </div>
 
     <aside class="timebox-panel" aria-label="Today timeline">
@@ -60,7 +36,7 @@
       {% else %}
         <div class="timebox-list">
           {% for row in timebox_plan.rows %}
-            <article class="timebox-row{% if row.task.is_highlight %} highlight{% endif %}">
+            <article class="timebox-row">
               <div class="timebox-time">
                 <strong>{{ row.time }}</strong>
                 {% if row.duration %}<span>{{ row.duration }}</span>{% endif %}

@@ -3,7 +3,7 @@ import os
 import tempfile
 import time
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -24,10 +24,13 @@ from ticktick_companion.dashboard.app import (
     task_view,
     ticktick_task_url,
     today_capacity,
-    today_commitment,
+    today_local,
+    parse_iso_dt,
+    user_tz,
 )
+from ticktick_companion.api.oauth import TickTickAuth
 from ticktick_companion.api.client import TickTickClient
-from ticktick_companion.api.token_store import TokenStore
+from ticktick_companion.api.token_store import EnvFileTokenStore, TokenStore
 from ticktick_companion.dashboard.event_log import EventLog
 from ticktick_companion.dashboard.mock_data import MockClient
 
@@ -121,6 +124,29 @@ class DashboardEndpointTests(unittest.TestCase):
         self.assertIn(b"data-default-drag-target=\"today\"", response.data)
         self.assertEqual(client.project_data_calls, [])
 
+    def test_htmx_panel_redirects_to_setup_when_ticktick_is_not_ready(self):
+        log = EventLog(":memory:")
+        app = create_app(None, event_log=log)
+        app.config["TESTING"] = True
+        http = app.test_client()
+
+        response = http.get("/panel/today", headers={"HX-Request": "true"})
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.headers["HX-Redirect"], "/")
+        self.assertEqual(response.data, b"")
+
+    def test_direct_panel_shows_setup_when_ticktick_is_not_ready(self):
+        log = EventLog(":memory:")
+        app = create_app(None, event_log=log)
+        app.config["TESTING"] = True
+        http = app.test_client()
+
+        response = http.get("/panel/today")
+
+        self.assertEqual(response.status_code, 401)
+        self.assertIn(b"Connect TickTick", response.data)
+
     def test_index_uses_local_assets_and_slow_counts_polling(self):
         app, _ = self.make_app()
 
@@ -130,6 +156,10 @@ class DashboardEndpointTests(unittest.TestCase):
         self.assertIn(b"/static/htmx.min.js", response.data)
         self.assertIn(b"every 5m", response.data)
         self.assertNotIn(b"every 60s", response.data)
+        self.assertIn(b'id="badge-home"', response.data)
+        self.assertIn(b'hx-swap="none"', response.data)
+        self.assertIn(b"htmx.ajax('POST'", response.data)
+        self.assertNotIn(b"fetch(", response.data)
 
     def test_counts_and_all_panels_render_with_mock_data(self):
         app, _ = self.make_app()
@@ -139,10 +169,12 @@ class DashboardEndpointTests(unittest.TestCase):
         self.assertEqual(counts.status_code, 200)
         self.assertIn("Server-Timing", counts.headers)
         self.assertEqual(counts.headers["X-TickTick-Cache"], "fresh")
-        self.assertIn(b"data-refresh-meta", counts.data)
-        self.assertIn(b'data-tab-count="home"', counts.data)
-        self.assertNotIn(b'data-tab-count="focus"', counts.data)
-        self.assertNotIn(b'data-tab-count="tomorrow"', counts.data)
+        self.assertIn(b'id="refresh-meta"', counts.data)
+        self.assertIn(b'data-refresh-meta', counts.data)
+        self.assertIn(b'hx-swap-oob="outerHTML"', counts.data)
+        self.assertIn(b'id="badge-home"', counts.data)
+        self.assertNotIn(b'id="badge-focus"', counts.data)
+        self.assertNotIn(b'id="badge-tomorrow"', counts.data)
 
         for panel in PANELS:
             with self.subTest(panel=panel):
@@ -161,13 +193,13 @@ class DashboardEndpointTests(unittest.TestCase):
         self.assertIn(b"Attention", response.data)
         self.assertNotIn(b"kpi-strip", response.data)
         self.assertNotIn(b"Today Load", response.data)
-        self.assertIn(b"Daily Planning", response.data)
-        self.assertIn(b"Timebox", response.data)
         self.assertIn(b"Attention Queue", response.data)
-        self.assertIn(b"Today Commitment", response.data)
+        self.assertIn(b"Today", response.data)
         self.assertIn(b"Next Best Actions", response.data)
         self.assertIn(b"Project Pressure", response.data)
         self.assertIn(b"Momentum", response.data)
+        self.assertIn(b'"source_panel":"home"', response.data)
+        self.assertNotIn(b"hx-on::after-request", response.data)
 
     def test_today_panel_renders_timebox_timeline(self):
         app, _ = self.make_app()
@@ -184,9 +216,49 @@ class DashboardEndpointTests(unittest.TestCase):
         response = app.test_client().get("/panel/eod")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Tomorrow's Highlight", response.data)
         self.assertIn(b"Tomorrow's lineup", response.data)
         self.assertIn(b"t-tomorrow", response.data)
+        self.assertIn(b"Roll to Tomorrow", response.data)
+
+    def test_rollover_today_moves_unfinished_tasks_to_tomorrow_keeping_times(self):
+        client = MockClient()
+        before_start = parse_iso_dt(client._tasks["t-today-2"]["startDate"]).astimezone(user_tz())
+        before_due = parse_iso_dt(client._tasks["t-today-2"]["dueDate"]).astimezone(user_tz())
+        app, log = self.make_app(client)
+
+        response = app.test_client().post("/tasks/rollover-today")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("reloadPanel", response.headers["HX-Trigger"])
+        self.assertIn("refreshCounts", response.headers["HX-Trigger"])
+        after_start = parse_iso_dt(client._tasks["t-today-2"]["startDate"]).astimezone(user_tz())
+        after_due = parse_iso_dt(client._tasks["t-today-2"]["dueDate"]).astimezone(user_tz())
+        self.assertEqual(after_start.date(), today_local() + timedelta(days=1))
+        self.assertEqual(after_due.date(), today_local() + timedelta(days=1))
+        self.assertEqual((after_start.hour, after_start.minute), (before_start.hour, before_start.minute))
+        self.assertEqual((after_due.hour, after_due.minute), (before_due.hour, before_due.minute))
+        self.assertTrue(any(ev["details"]["kind"] == "rollover_today" for ev in log.recent()))
+
+    def test_next_slot_action_schedules_task_in_tomorrow_morning_gap(self):
+        client = MockClient()
+        for task_id in list(client._tasks):
+            if task_id.startswith("t-tomorrow-"):
+                del client._tasks[task_id]
+        app, log = self.make_app(client)
+
+        response = app.test_client().post(
+            "/task/693a3b6a34db910305e570fc/t-overdue-2/action",
+            data={"action": "next_slot"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        task = client._tasks["t-overdue-2"]
+        start = parse_iso_dt(task["startDate"]).astimezone(user_tz())
+        due = parse_iso_dt(task["dueDate"]).astimezone(user_tz())
+        self.assertEqual(start.date(), today_local() + timedelta(days=1))
+        self.assertEqual((start.hour, start.minute), (9, 0))
+        self.assertEqual((due.hour, due.minute), (9, 30))
+        self.assertTrue(any(ev["details"]["kind"] == "next_slot" for ev in log.recent()))
 
     def test_removed_panels_do_not_render(self):
         app, _ = self.make_app()
@@ -203,7 +275,8 @@ class DashboardEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Recovery Mode", response.data)
         self.assertIn(b"Today capacity", response.data)
-        self.assertIn(b"Break Down", response.data)
+        self.assertNotIn(b"Break Down", response.data)
+        self.assertNotIn(b"diagnosis-", response.data)
         self.assertIn(b"Mark Waiting", response.data)
 
     def test_major_actions_succeed_with_mock_data(self):
@@ -242,7 +315,25 @@ class DashboardEndpointTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["ok"], True)
+        self.assertEqual(response.mimetype, "text/html")
+        self.assertEqual(response.data, b"")
+        self.assertIsNone(response.get_json(silent=True))
+        self.assertIn("refreshCounts", response.headers["HX-Trigger"])
+        self.assertIn("reloadPanel", response.headers["HX-Trigger"])
+
+    def test_drag_action_error_returns_flash_fragment(self):
+        app, _ = self.make_app()
+        response = app.test_client().post(
+            "/task/693a3b6a34db910305e570fc/t-overdue-2/drag",
+            data={"target": "nowhere"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "text/html")
+        self.assertIn(b"unknown drag target: nowhere", response.data)
+        self.assertEqual(response.headers["HX-Retarget"], "#flash-region")
+        self.assertEqual(response.headers["HX-Reswap"], "innerHTML")
+        self.assertNotIn("HX-Trigger", response.headers)
 
     def test_write_failure_keeps_card_visible_and_does_not_log(self):
         app, log = self.make_app(FailingWriteClient())
@@ -278,17 +369,28 @@ class DashboardEndpointTests(unittest.TestCase):
         events = log.recent()
         self.assertEqual(events[0]["action"], "reschedule")
         self.assertEqual(events[0]["details"]["reason"], "Capacity override")
+        self.assertIn("reloadPanel", response.headers["HX-Trigger"])
 
-    def test_diagnose_route_returns_non_mutating_suggestions(self):
+    def test_refresh_triggers_counts_and_panel_reload(self):
         app, _ = self.make_app()
 
-        response = app.test_client().get(
-            "/task/693a3b6a34db910305e570fc/t-overdue-2/diagnose"
+        response = app.test_client().post("/refresh")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("refreshCounts", response.headers["HX-Trigger"])
+        self.assertIn("reloadPanel", response.headers["HX-Trigger"])
+
+    def test_home_sourced_task_action_triggers_panel_reload(self):
+        app, _ = self.make_app()
+
+        response = app.test_client().post(
+            "/task/693a3b6a34db910305e570fc/t-overdue-13/action",
+            data={"action": "someday", "source_panel": "home"},
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Make it actionable", response.data)
-        self.assertIn(b"Rewrite:", response.data)
+        self.assertIn("refreshCounts", response.headers["HX-Trigger"])
+        self.assertIn("reloadPanel", response.headers["HX-Trigger"])
 
     def test_large_someday_panel_uses_lazy_card_page(self):
         client = MockClient()
@@ -419,6 +521,25 @@ class TickTickOAuthRecoveryTests(unittest.TestCase):
         self.assertIn(b"Connect TickTick", response.data)
         self.assertIn(b"Authorize TickTick", response.data)
 
+    def test_vercel_setup_requires_durable_token_store_before_oauth(self):
+        with patch.dict(os.environ, {
+            "VERCEL": "1",
+            "TICKTICK_CLIENT_ID": "client",
+            "TICKTICK_CLIENT_SECRET": "secret",
+        }, clear=True):
+            app = create_app(None, event_log=EventLog(":memory:"), token_store=FakeTokenStore())
+            app.config["TESTING"] = True
+            http = app.test_client()
+            setup = http.get("/")
+            start = http.get("/auth/ticktick/start")
+
+        self.assertEqual(setup.status_code, 200)
+        self.assertIn(b"UPSTASH_REDIS_REST_URL", setup.data)
+        self.assertIn(b"UPSTASH_REDIS_REST_TOKEN", setup.data)
+        self.assertNotIn(b"Authorize TickTick", setup.data)
+        self.assertEqual(start.status_code, 400)
+        self.assertIn(b"UPSTASH_REDIS_REST_URL", start.data)
+
     def test_oauth_start_is_protected_by_dashboard_login(self):
         app = self.make_protected_oauth_app()
 
@@ -480,6 +601,49 @@ class TickTickOAuthRecoveryTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(token_store.tokens["TICKTICK_ACCESS_TOKEN"], "new-access")
         self.assertEqual(token_store.tokens["TICKTICK_REFRESH_TOKEN"], "new-refresh")
+
+    def test_oauth_callback_token_store_failure_returns_setup_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            token_store = EnvFileTokenStore(env_path=tmp)
+            app = self.make_protected_oauth_app(token_store)
+            http = app.test_client()
+            with http.session_transaction() as sess:
+                sess["dashboard_authenticated"] = True
+                sess["ticktick_oauth_state"] = "good"
+
+            with patch("ticktick_companion.api.oauth.requests.post") as post:
+                post.return_value = FakeResponse({
+                    "access_token": "new-access",
+                    "refresh_token": "new-refresh",
+                })
+                response = http.get("/auth/ticktick/callback?code=abc&state=good")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(b"Error exchanging code for token", response.data)
+        self.assertIn(b"Could not read token env file", response.data)
+
+    def test_invalid_grant_error_explains_redirect_uri_and_fresh_code(self):
+        auth = TickTickAuth(
+            client_id="client",
+            client_secret="secret",
+            redirect_uri="https://example.vercel.app/auth/ticktick/callback",
+            token_store=FakeTokenStore(),
+        )
+
+        with patch("ticktick_companion.api.oauth.requests.post") as post:
+            post.return_value = FakeResponse(
+                {
+                    "error": "invalid_grant",
+                    "error_description": "Invalid authorization code: 7J4xaO",
+                },
+                status_code=400,
+            )
+            result = auth.exchange_authorization_code("7J4xaO")
+
+        self.assertIn("Start authorization again", result)
+        self.assertIn("can only be used once", result)
+        self.assertIn("https://example.vercel.app/auth/ticktick/callback", result)
+        self.assertNotIn("7J4xaO", result)
 
     @patch.dict(os.environ, {
         "TICKTICK_CLIENT_ID": "client",
@@ -590,37 +754,40 @@ class TickTickStoreTests(unittest.TestCase):
             self.assertTrue(store.is_stale_snapshot)
             self.assertEqual(store.all_active_tasks()[0]["id"], "t-saved")
 
+    def test_snapshot_with_mock_seed_tasks_is_deleted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            snapshot = Path(tmp) / "snapshot.json"
+            snapshot.write_text(json.dumps({
+                "version": 1,
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "projects": [{"id": "p-saved", "name": "Saved", "closed": False}],
+                "tasks_by_project": {
+                    "p-saved": [{
+                        "id": "t-overdue-1",
+                        "projectId": "p-saved",
+                        "title": "Seed task that must not leak",
+                        "status": 0,
+                    }]
+                },
+            }))
+
+            store = TickTickStore(
+                CountingClient(),
+                ttl_seconds=60,
+                max_workers=2,
+                snapshot_path=snapshot,
+            )
+
+            self.assertFalse(store.is_stale_snapshot)
+            self.assertFalse(snapshot.exists())
+            self.assertEqual([t["id"] for t in store.all_active_tasks()], ["t-p1", "t-p2"])
+
 
 class HomeViewModelTests(unittest.TestCase):
     def make_store(self, client=None):
         store = TickTickStore(client or MockClient(), ttl_seconds=60, max_workers=2)
         store.all_active_tasks()
         return store
-
-    def test_missing_highlight_produces_pick_highlight_recommendation(self):
-        client = MockClient()
-        for task in client._tasks.values():
-            if task.get("priority") == 5:
-                task["priority"] = 3
-                task["title"] = task.get("title", "").removeprefix("⭐ ")
-        store = self.make_store(client)
-        tasks = store.all_active_tasks()
-
-        recs = recommended_actions(tasks, project_lookup(store))
-
-        self.assertEqual(recs[0]["kind"], "missing_highlight")
-        self.assertEqual(recs[0]["primary_action"]["action"], "highlight")
-
-    def test_existing_highlight_today_commitment_uses_two_big_things(self):
-        client = MockClient()
-        # Keep a single Highlight, due today, so the commitment model is stable.
-        client._tasks["t-overdue-6"]["priority"] = 3
-        store = self.make_store(client)
-        commitment = today_commitment(store.all_active_tasks(), project_lookup(store))
-
-        self.assertEqual(commitment["highlight"]["id"], "t-today-1")
-        self.assertEqual(len(commitment["big_things"]), 2)
-        self.assertGreaterEqual(commitment["tail_count"], 1)
 
     def test_recovery_recommendation_ranks_high_value_overdue_work(self):
         client = MockClient()

@@ -14,7 +14,7 @@
   --good: #23824d;
   --warn: #bf6a24;
   --danger: #e33333;
-  --highlight: #e9a83a;
+  --priority-high: #e9a83a;
   --waiting: #6f5cc4;
   --shadow: 0 1px 2px rgba(32, 30, 25, 0.06), 0 12px 30px rgba(32, 30, 25, 0.08);
   --shadow-soft: 0 1px 2px rgba(32, 30, 25, 0.05), 0 8px 18px rgba(32, 30, 25, 0.06);
@@ -233,7 +233,7 @@ pre { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; fo
   font-weight: 800;
   background:
     linear-gradient(var(--bg-elev), var(--bg-elev)) padding-box,
-    conic-gradient(from 35deg, var(--accent), var(--highlight), var(--accent)) border-box;
+    conic-gradient(from 35deg, var(--accent), var(--priority-high), var(--accent)) border-box;
   border: 3px solid transparent;
   color: var(--accent);
 }
@@ -396,6 +396,27 @@ pre { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; fo
 
 .refresh-meta.warn { color: var(--warn); }
 .refresh-meta.error { color: var(--danger); }
+
+.flash-region {
+  min-height: 0;
+  padding: 0 24px;
+}
+
+.flash {
+  margin: 12px 0 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  color: var(--fg-soft);
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.flash.error {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 9%, var(--bg-card));
+}
 
 .ghost {
   height: 32px;
@@ -609,100 +630,6 @@ main {
 
 .home-head { margin-bottom: 14px; }
 
-.ritual-strip {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  margin: 0 0 18px;
-}
-
-.ritual-card {
-  min-width: 0;
-  min-height: 76px;
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg-card) 88%, var(--bg-soft));
-  color: var(--fg-soft);
-  text-align: left;
-  cursor: pointer;
-  box-shadow: var(--shadow-soft);
-  transition:
-    background 150ms ease,
-    border-color 150ms ease,
-    box-shadow 150ms ease,
-    transform 150ms var(--ease-out);
-}
-
-.ritual-card:hover {
-  border-color: var(--border-strong);
-  background: var(--bg-card);
-  box-shadow: var(--shadow-active);
-  transform: translateY(-1px);
-}
-
-.ritual-card:active {
-  transform: scale(0.985);
-}
-
-.ritual-kicker {
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  color: var(--fg-mute);
-  font-size: 12px;
-  font-weight: 850;
-}
-
-.ritual-copy {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.ritual-copy strong,
-.ritual-copy span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ritual-copy strong {
-  color: var(--fg);
-  font-size: 13px;
-}
-
-.ritual-copy span {
-  color: var(--fg-mute);
-  font-size: 12px;
-}
-
-.ritual-action {
-  color: var(--accent-strong);
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.ritual-done .ritual-kicker {
-  color: white;
-  background: var(--good);
-  border-color: var(--good);
-}
-
-.ritual-needs .ritual-kicker {
-  color: #1d1300;
-  background: var(--highlight);
-  border-color: var(--highlight);
-}
-
 .command-center {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
@@ -815,10 +742,6 @@ main {
   margin-top: 3px;
   color: var(--fg-mute);
   font-size: 12px;
-}
-
-.highlight-mini {
-  border-left: 4px solid var(--highlight);
 }
 
 .commitment-tail,
@@ -934,7 +857,7 @@ main {
 }
 
 .pressure-item:nth-child(2n) .pressure-bar span {
-  background: linear-gradient(90deg, var(--warn), var(--highlight));
+  background: linear-gradient(90deg, var(--warn), var(--priority-high));
 }
 
 .pressure-item:nth-child(3n) .pressure-bar span {
@@ -997,11 +920,6 @@ main {
     box-shadow: var(--shadow-active);
     transform: translateY(-1px);
   }
-}
-
-.card.highlight {
-  border-color: color-mix(in srgb, var(--highlight) 60%, var(--border));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--highlight) 20%, transparent);
 }
 
 .card.waiting { border-color: color-mix(in srgb, var(--waiting) 44%, var(--border)); }
@@ -1373,7 +1291,7 @@ main {
   transform: scale(0.94);
 }
 
-.prio-btn.on.prio-5 { background: var(--highlight); color: #1c1300; border-color: var(--highlight); }
+.prio-btn.on.prio-5 { background: var(--priority-high); color: #1c1300; border-color: var(--priority-high); }
 .prio-btn.on.prio-3 { background: var(--accent); color: white; border-color: var(--accent); }
 .prio-btn.on.prio-1 { background: var(--fg-mute); color: var(--bg); border-color: var(--fg-mute); }
 .prio-btn.on.prio-0 { background: var(--bg-card-hover); color: var(--fg); }
@@ -1467,11 +1385,6 @@ main {
   background: var(--bg-card);
   border: 2px solid var(--accent);
   z-index: 1;
-}
-
-.timebox-row.highlight::before {
-  border-color: var(--highlight);
-  background: var(--highlight);
 }
 
 .timebox-time {
@@ -1577,8 +1490,7 @@ main {
 }
 
 .recovery-summary,
-.recovery-note,
-.diagnosis {
+.recovery-note {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-card);
@@ -1617,27 +1529,6 @@ main {
 .recovery-note strong { color: var(--accent-strong); }
 .recovery-note.stuck strong { color: var(--warn); }
 .recovery-note span { color: var(--fg-mute); }
-
-.diagnosis {
-  margin-top: 8px;
-  padding: 9px 11px;
-  color: var(--fg-soft);
-  font-size: 12px;
-}
-
-.diagnosis-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.diagnosis-head span {
-  color: var(--accent-strong);
-  font-weight: 750;
-}
-
-.diagnosis p { margin: 7px 0; }
-.diagnosis ul { margin: 0; padding-left: 18px; }
 
 .reschedule-reason {
   height: 26px;
@@ -1905,10 +1796,6 @@ main {
 }
 
 @media (max-width: 1120px) {
-  .ritual-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .command-center {
     grid-template-columns: 1fr;
   }
@@ -1997,7 +1884,6 @@ main {
     flex-direction: column;
   }
 
-  .ritual-strip,
   .command-main,
   .command-rail,
   .commitment-layout,

@@ -5,6 +5,13 @@
       <h2>{{ title }}</h2>
       <p class="muted">{{ subtitle }}</p>
     </div>
+    {% if rollover_count %}
+      <button class="btn plan-primary"
+              hx-post="/tasks/rollover-today"
+              hx-swap="none"
+              hx-confirm="Move {{ rollover_count }} unfinished task{% if rollover_count != 1 %}s{% endif %} from today to tomorrow, keeping their times?"
+              title="Move today's unfinished scheduled tasks to tomorrow">Roll to Tomorrow</button>
+    {% endif %}
   </div>
 
   <div class="eod-grid">
@@ -45,19 +52,6 @@
           {% for task in unfinished %}
             {% include "_card.html" %}
           {% endfor %}
-        </div>
-      {% endif %}
-    </div>
-
-    <div class="eod-section">
-      <h3 class="section-label">Tomorrow's Highlight</h3>
-      {% if highlight_for_tomorrow %}
-        <p class="muted small">Already set:</p>
-        {% set task = highlight_for_tomorrow %}
-        {% include "_card.html" %}
-      {% else %}
-        <div class="empty">
-          No Highlight on tomorrow. Click the star on the one task that would make tomorrow feel like a win.
         </div>
       {% endif %}
     </div>

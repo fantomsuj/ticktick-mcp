@@ -324,10 +324,27 @@ class TickTickAuth:
             if hasattr(e, 'response') and e.response is not None:
                 try:
                     error_details = e.response.json()
-                    return f"Error exchanging code for token: {error_details}"
+                    return self._format_token_error(error_details)
                 except:
                     return f"Error exchanging code for token: {e.response.text}"
             return f"Error exchanging code for token: {str(e)}"
+
+    def _format_token_error(self, error_details: Dict) -> str:
+        error = error_details.get("error") if isinstance(error_details, dict) else None
+        if error == "invalid_grant":
+            return (
+                "TickTick rejected the authorization code. Start authorization "
+                "again from this deployment; authorization codes expire quickly "
+                "and can only be used once. If this keeps happening, make sure "
+                "the redirect URI registered in TickTick Developer Center "
+                f"exactly matches: {self.redirect_uri}"
+            )
+        if error == "invalid_client":
+            return (
+                "TickTick rejected the client credentials. Check "
+                "TICKTICK_CLIENT_ID and TICKTICK_CLIENT_SECRET in the deployment."
+            )
+        return f"Error exchanging code for token: {error_details}"
     
     def _save_tokens_to_env(self) -> None:
         """Save the tokens to the .env file."""

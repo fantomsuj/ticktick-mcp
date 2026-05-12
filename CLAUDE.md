@@ -3,9 +3,10 @@
 See AGENT.md for scheduling rules.
 
 TickTick Companion is the main local project for these workflows. The dashboard
-is the primary daily planning and triage surface; Claude should use the MCP
-tools as the conversational counterpart to the same Highlight, Inbox, Waiting,
-Someday, and End of Day habits.
+is the primary daily planning and triage surface. Claude should treat MCP as an
+agent bridge for helping build, debug, and maintain that triage app, and should
+keep any TickTick changes aligned with the same Inbox, Waiting, Someday, and
+End of Day habits.
 
 ---
 
@@ -67,18 +68,13 @@ These three projects are all part of building Extensible, the startup I'm workin
 ## Priority System
 
 TickTick priorities map to my GTD approach:
-- **High (5)** — The day's **Highlight**: one task that makes the day feel like a win. Never assign to more than one task per day.
+- **High (5)** — Important or urgent work
 - **Medium (3)** — Next actions; things I intend to do soon
 - **Low (1)** — Someday/maybe or low-urgency
 - **None (0)** — Inbox / unprocessed
 
 "Next actions" in GTD = **medium priority**.
 "Waiting for" tasks go in the **Work project** (closest match: Bedrock Robotics or GTM & Relationships) with the title prefix `WAITING:`.
-
-### Highlight Rule
-The Highlight is the single most important task for the day — not the most urgent, but the one that will make the day feel like a win. Only one High (5) task should exist at any time. If I try to set a second one, flag the conflict and ask which should be the Highlight.
-
-**Highlight visual marker**: When setting a task as the Highlight, prepend `⭐ ` to the task title (e.g., `⭐ Write investor memo`). When a task is demoted from Highlight status, remove the `⭐ ` prefix. This makes the Highlight visually distinct in all TickTick views.
 
 ---
 
@@ -93,20 +89,12 @@ When I say **"weekly review"**, do this sequence:
 5. Execute my decisions one at a time, confirming each
 6. Scan the **Someday/Maybe** project — surface anything that's become relevant or timely, and ask if any items should be promoted to an active project with a due date
 
-### Three Big Things
-Each day has a committed core of **three important tasks** (the Highlight + two others). Additional tasks are a "tail" — nice to do if time permits, but not the measure of the day. When planning, identify the three and name them explicitly before time-blocking anything else.
-
 ### Daily Planning
 When I say **"plan my day"**:
 1. Show overdue tasks
 2. Show tasks due today
-3. Check if a Highlight (High priority task) is already set — if yes, surface it prominently; if no, ask me to pick one from the list
-4. Identify the **Three Big Things**: the Highlight + two other important tasks. Name them explicitly.
-5. Help me prioritize the remaining tasks and suggest a rough time-block order (three blocks for the Big Three, buffer/admin for the tail)
-6. Ask if I want to add, reschedule, or drop anything
-7. At the end, ask: "What's your Highlight for tomorrow?" — set it if I name one
-
-**Highlight enforcement**: if I already have a High (5) task and try to set another, pause and say which task is currently the Highlight, then ask which one should take that role.
+3. Help me prioritize the tasks and suggest a rough time-block order
+4. Ask if I want to add, reschedule, or drop anything
 
 ### End of Day Close
 When I say **"close my day"**:
@@ -114,19 +102,12 @@ When I say **"close my day"**:
 2. Show tasks that were scheduled today but not done
 3. Ask for each unfinished task: reschedule to tomorrow, move to Someday/Maybe, or drop?
 4. Execute decisions one at a time
-5. Ask: "What's your Highlight for tomorrow?" — set it if I name one
 
 ### Overdue Hygiene
 When showing overdue tasks during daily planning or weekly review:
 - Flag anything **3+ days overdue** prominently
 - For each, ask: reschedule, move to Someday/Maybe, or drop?
 - Don't let overdue tasks silently pile up — surface them actively
-
-### Priority Audit
-At the start of each planning session:
-- Check how many tasks are marked High (5)
-- If more than 1 is High, list them all and ask which one is the real Highlight
-- Demote the rest to Medium (3) after confirmation
 
 ### Focus Mode
 When I say **"focus on [project]"**:
